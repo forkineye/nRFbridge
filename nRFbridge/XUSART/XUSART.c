@@ -120,3 +120,15 @@ void xusart_get_packet(USART_t *usart, uint8_t *data, uint8_t len) {
         *data++ = xusart_getchar(usart);
     }
 }
+
+void xusart_send_buffer(USART_t *usart, RingBuff_t *buffer) {
+    uint8_t len = RingBuffer_GetCount(buffer);
+    while (len--)
+        xusart_putchar(usart, RingBuffer_Remove(buffer));
+}
+
+void xusart_get_buffer(USART_t *usart, RingBuff_t *buffer, uint8_t len) {
+    while (len--) {
+        RingBuffer_Insert(buffer, xusart_getchar(usart));
+    }
+}

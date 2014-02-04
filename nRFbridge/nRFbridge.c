@@ -22,14 +22,14 @@
 #include <avr/interrupt.h>
 #include <util/delay.h>
 #include <stdbool.h>
-#include "XSPI/XSPI.h"
 #include "XUSART/XUSART.h"
 #include "XNRF24L01/XNRF24L01.h"
 
 #define USART_TXMODE PORTD.OUTSET = PIN1_bm
 #define USART_RXMODE PORTD.OUTCLR = PIN1_bm
 
-static xnrf_config_t xnrf_config = {
+/* NRF24L01 configuration structure */
+xnrf_config_t xnrf_config = {
     .spi = &SPIC,
     .spi_port = &PORTC,
     .ss_port = &PORTC,
@@ -43,12 +43,10 @@ static xnrf_config_t xnrf_config = {
     //.confbits = ((1 << EN_CRC) | (1 << CRCO)) //TODO: move confbits elsewhere for runtime config changes
 };
 
-static uint64_t addr_p0 = 0xF0F0F0F0E1LL;  /* default nRF address for TX and Pipe 0 RX */
-static uint64_t addr_p1 = 0xF0F0F0F0D2LL;  /* default nRF address for Pipe 1 RX */    
-
-//TODO: Implement circle buffer or double buffer
-static uint8_t rxbuff[32];      /* global RX buffer */
+uint64_t addr_p0 = ADDR_P0;     /* default nRF address for TX and Pipe 0 RX */
+uint64_t addr_p1 = ADDR_P1;     /* default nRF address for Pipe 1 RX */    
 volatile bool DFLAG = false;    /* Data ready flag */
+RingBuff_t  rxbuff;             /* Ring buffer to hold our data */
 
 /* Initialize the board */
 //TODO: Add DMA support
@@ -61,6 +59,9 @@ void init() {
     CCP = CCP_IOREG_gc;                             /* Disable register security for clock update */
     CLK.CTRL = CLK_SCLKSEL_RC32M_gc;                /* Switch to 32MHz clock */
     OSC.CTRL &= ~OSC_RC2MEN_bm;                     /* Disable 2Mhz oscillator */
+
+    // Initialize ring buffer
+    RingBuffer_InitBuffer(&rxbuff);
         
     // Configure IO
     PORTA.DIRSET = PIN0_bm;             /* Status LED */
@@ -108,26 +109,27 @@ void init() {
 
 /* Interrupt handler for nRF hardware interrupt on PC3 */
 ISR(PORTC_INT_vect) {
-    xnrf_read_payload(&xnrf_config, rxbuff, xnrf_config.payload_width);     /* retrieve the payload */
+    xnrf_read_payload(&xnrf_config, &rxbuff, xnrf_config.payload_width);    /* retrieve the payload */
     xnrf_write_register(&xnrf_config, NRF_STATUS, (1 << RX_DR));            /* reset the RX_DR status */
-    //TODO: Check FIFO status to keep reading payloads if needed
-
-    DFLAG = true;               /* set state flag */
-    PORTC.INTFLAGS = PIN3_bm;   /* Clear interrupt flag for PC3 */
+    
+    // Keep coming back until FIFO is empty.
+    if((xnrf_read_register(&xnrf_config, FIFO_STATUS)) & RX_EMPTY)
+        PORTC.INTFLAGS = PIN3_bm;   /* Clear interrupt flag for PC3 */
+    DFLAG = true;                   /* set state flag */
 }
 
 int main(void) {
     init();
     
-    //TODO: Add logic to determine bridge direction.  For now, we're doing nRF->RS485.
+    //TODO: Add logic to determine bridge direction.  For now, we're going one direction: nRF->RS485.
     USART_TXMODE;
     
     while(1) {
         while(!DFLAG);  /* spin our wheels until we have data */
-            xusart_send_packet(&USARTD0, rxbuff, xnrf_config.payload_width);    /* spit out the buffer */
-            xusart_putchar(&USARTD0, 0x0D);     /* CR */
-            xusart_putchar(&USARTD0, 0x0A);     /* LF */
-            PORTA.OUTTGL = PIN0_bm;             /* Toggle status LED */
-            DFLAG = false;                      /* clear our data ready flag */
+            xusart_send_buffer(&USARTD0, &rxbuff);  /* spit out the buffer */
+            xusart_putchar(&USARTD0, 0x0D);         /* CR */
+            xusart_putchar(&USARTD0, 0x0A);         /* LF */
+            PORTA.OUTTGL = PIN0_bm;                 /* Toggle status LED */
+            DFLAG = false;                          /* clear our data ready flag */
     }
 }

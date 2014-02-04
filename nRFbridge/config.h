@@ -20,11 +20,19 @@
 #ifndef CONFIG_H_
 #define CONFIG_H_
 
-#define F_CPU 32000000UL        /* Set our clock define so delay functions are happy */
+/* Set our clock define so delay functions are happy */
+#define F_CPU   32000000UL
 
+/* XNRF24L01 Config */
 #define NRF_CHANNEL 100             /* default nRF channel */
-#define NRF_RATE XNRF_250KBPS       /* default nRF data rate */
+#define NRF_RATE    XNRF_250KBPS    /* default nRF data rate */
+#define ADDR_P0     0xF0F0F0F0E1LL  /* default Pipe 0 address */
+#define ADDR_P1     0xF0F0F0F0D2LL  /* default Pipe 1 address */
 
-#define USART_BAUDRATE 115200
+/* XUSART Config */
+#define USART_BAUDRATE  115200
+
+/* RingBuffer Config */
+#define BUFFER_SIZE     255
 
 #endif /* CONFIG_H_ */

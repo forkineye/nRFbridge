@@ -21,6 +21,7 @@
 #define XNRF24L01_H_
 
 #include "../config.h"
+#include "../RingBuffer.h"
 #include "../XSPI/XSPI.h"
 #include "nRF24L01.h"
 
@@ -84,17 +85,17 @@ void xnrf_write_register_buffer(xnrf_config_t *config, uint8_t reg, uint8_t *dat
 
 /*! \brief Retrieves a payload.
  *  \param config   Pointer to a xnrf_config_t structure.
- *  \param data     Address of a buffer to hold the returned payload
+ *  \param buffer   Pointer to a RingBuffer structure to hold our data.
  *  \param len      Length of the payload you're retrieving.
  */
-void xnrf_read_payload(xnrf_config_t *config, uint8_t *data, uint8_t len);
+void xnrf_read_payload(xnrf_config_t *config, RingBuff_t *buffer, uint8_t len);
 
 /*! \brief Writes a payload to be transmitted.
  *  \param config   Pointer to a xnrf_config_t structure.
- *  \param data     Pointer to the payload we are sending.
+ *  \param buffer   Pointer to a RingBuffer structure that holds our data.
  *  \param len      Size of the payload we are sending.
  */
-void xnrf_write_payload(xnrf_config_t *config, uint8_t *data, uint8_t len);
+void xnrf_write_payload(xnrf_config_t *config, RingBuff_t *buffer, uint8_t len);
 
 /*! \brief Sets the air datarate.
  *  \param config   Pointer to a xnrf_config_t structure.

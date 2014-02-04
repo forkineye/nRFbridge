@@ -21,6 +21,7 @@
 #define XUSART_H_
 
 #include "../config.h"
+#include "../RingBuffer.h"
 #include <avr/io.h>
 #include <stdbool.h>
 
@@ -46,18 +47,30 @@ bool xusart_set_baudrate(USART_t *usart, uint32_t baud, uint32_t cpu_hz);
 
 /*! \brief Sends a packet of data.
  *  \param usart    Pointer to USART_t module structure.
- *  \param data     Pointer to a buffer to store the retrieved data.
+ *  \param data     Pointer to the data packet to send.
  *  \param len      Size of the buffer in bytes.
  */
 void xusart_send_packet(USART_t *usart, uint8_t *data, uint8_t len);
 
-/*! \brief Retrieves a packet of data via UART in Master SPI mode.
+/*! \brief Blocking call that retrieves a packet of data.
  *  \param usart    Pointer to USART_t module structure.
- *  \param data     Pointer to a buffer to store the retrieved data.
+ *  \param data     Pointer to a buffer to hold our data packet.
  *  \param len      Size of the buffer in bytes.
  */
 void xusart_get_packet(USART_t *usart, uint8_t *data, uint8_t len);
 
+/*! \brief Sends all the contents of a RingBuffer object.
+ *  \param usart    Pointer to USART_t module structure.
+ *  \param buffer   Pointer to a RingBuffer structure that contains our data.
+  */
+void xusart_send_buffer(USART_t *usart, RingBuff_t *buffer);
+
+/*! \brief Blocking call that retrieves a packet to a RingBuffer object.
+ *  \param usart    Pointer to USART_t module structure.
+ *  \param buffer   Pointer to a RingBuffer structure to hold our data.
+ *  \param len      Size of the buffer in bytes.
+ */
+void xusart_get_buffer(USART_t *usart, RingBuff_t *buffer, uint8_t len);
 
 /*! \brief Function that sets the USART frame format.
  *  \param usart        Pointer to the USART module.
