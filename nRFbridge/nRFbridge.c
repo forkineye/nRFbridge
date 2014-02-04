@@ -43,10 +43,11 @@ xnrf_config_t xnrf_config = {
     //.confbits = ((1 << EN_CRC) | (1 << CRCO)) //TODO: move confbits elsewhere for runtime config changes
 };
 
-uint64_t addr_p0 = ADDR_P0;     /* default nRF address for TX and Pipe 0 RX */
-uint64_t addr_p1 = ADDR_P1;     /* default nRF address for Pipe 1 RX */    
-volatile bool DFLAG = false;    /* Data ready flag */
-RingBuff_t  rxbuff;             /* Ring buffer to hold our data */
+uint64_t addr_p0 = ADDR_P0;         /* default nRF address for TX and Pipe 0 RX */
+uint64_t addr_p1 = ADDR_P1;         /* default nRF address for Pipe 1 RX */    
+RingBuff_t  rxbuff;                 /* Ring buffer to hold our data */
+volatile bool DFLAG = false;        /* nRF Data ready flag */
+volatile uint8_t usart_counter = 0; /* counter to keep track of buffer updates in USART RX ISR */
 
 /* Initialize the board */
 //TODO: Add DMA support
@@ -92,16 +93,16 @@ void init() {
     PORTC_PIN3CTRL = PORT_ISC_FALLING_gc;   /* Setup PC3 to sense falling edge */
     PORTC.INTMASK = PIN3_bm;                /* Enable pin change interrupt for PC3 */
     PORTC.INTCTRL = PORT_INTLVL_LO_gc;      /* Set Port C for low level interrupts */
-    PMIC.CTRL |= PMIC_LOLVLEN_bm;           /* Enable low interrupts */
-    
-    // Setup USART interrupt handling    
-    //TODO: Setup USART interrupt stuff
+
+    // Setup USART RX interrupt handling    
+    USARTD0.CTRLA = ((USARTD0.CTRLA & ~USART_RXCINTLVL_gm) | USART_RXCINTLVL_LO_gc);
     
     // Initialize listening on both RS485 line and nRF.  First in determines bridge direction
     xnrf_powerup_rx(&xnrf_config);  /* Power-up nRF in RX mode */
     _delay_ms(5);                   /* Let the radio stabilize */
     
     // Enable interrupts and start listening
+    PMIC.CTRL |= PMIC_LOLVLEN_bm;   /* Enable low interrupts */
     sei();                          /* Enable global interrupt flag */
     USART_RXMODE;                   /* USART Listen mode */
     xnrf_enable(&xnrf_config);      /* start listening on nRF */
@@ -113,23 +114,60 @@ ISR(PORTC_INT_vect) {
     xnrf_write_register(&xnrf_config, NRF_STATUS, (1 << RX_DR));            /* reset the RX_DR status */
     
     // Keep coming back until FIFO is empty.
-    if((xnrf_read_register(&xnrf_config, FIFO_STATUS)) & RX_EMPTY)
+    if((xnrf_read_register(&xnrf_config, FIFO_STATUS)) & (1 << RX_EMPTY))
         PORTC.INTFLAGS = PIN3_bm;   /* Clear interrupt flag for PC3 */
     DFLAG = true;                   /* set state flag */
+}
+
+/* Interrupt handler for USART RX on Port D - Every 1100 clock cycles @ 115,200? Polling instead? */
+ISR(USARTD0_RXC_vect) {
+    RingBuffer_Insert(&rxbuff, xusart_getchar(&USARTD0));   /* get the byte */
+    usart_counter++;
+}
+
+/* loop for one way nrf->rs485 bridge */
+void nrf_to_rs485_loop() {
+    USART_TXMODE;       /* enable USART TX */
+    while(1) {
+        while(!DFLAG);  /* spin our wheels until we have data */
+        xusart_send_buffer(&USARTD0, &rxbuff);  /* spit out the buffer */
+        //xusart_putchar(&USARTD0, 0x0D);         /* CR */
+        //xusart_putchar(&USARTD0, 0x0A);         /* LF */
+        PORTA.OUTTGL = PIN0_bm;                 /* Toggle status LED */
+        DFLAG = false;                          /* clear our data ready flag */
+    }    
+}
+
+/* loop for one way rs485->nrf bridge */
+void rs485_to_nrf_loop() {
+    USART_RXMODE;                   /* enable USART RX */
+    xnrf_powerup_tx(&xnrf_config);  /* Power up transmitter */
+    _delay_ms(5);                   /* Give the radio time to stabilize */
+    xnrf_enable(&xnrf_config);      /* Enable and stay in Standby-II mode, auto-sending as data hits the TX FIFO */
+
+    while(1) {
+        //TODO: This needs a timeout check or some way to handle packets < 32 bytes.  Timer facilty that resets from RX ISR?
+        //TODO:  Actually, this doesn't work at all right now. Big design flaw.. really didn't think this one through :)
+        while(usart_counter < 32);                      /* spin our wheels until we have a full packet to forward */
+        xnrf_write_payload(&xnrf_config, &rxbuff, 32);  /* send the packet off */
+        usart_counter = 0;                              /* reset our counter */
+        PORTA.OUTTGL = PIN0_bm;                         /* Toggle status LED */
+    }
+}
+
+/* loop for bidirectional bridge */
+void bidrectional_loop() {
+    while(1) {
+
+    }
 }
 
 int main(void) {
     init();
     
     //TODO: Add logic to determine bridge direction.  For now, we're going one direction: nRF->RS485.
-    USART_TXMODE;
+    nrf_to_rs485_loop();
+    //rs485_to_nrf_loop();
+    //bidirectional_loop();
     
-    while(1) {
-        while(!DFLAG);  /* spin our wheels until we have data */
-            xusart_send_buffer(&USARTD0, &rxbuff);  /* spit out the buffer */
-            xusart_putchar(&USARTD0, 0x0D);         /* CR */
-            xusart_putchar(&USARTD0, 0x0A);         /* LF */
-            PORTA.OUTTGL = PIN0_bm;                 /* Toggle status LED */
-            DFLAG = false;                          /* clear our data ready flag */
-    }
 }
