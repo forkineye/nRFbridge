@@ -140,17 +140,20 @@ void nrf_to_rs485_loop() {
 
 /* loop for one way rs485->nrf bridge */
 void rs485_to_nrf_loop() {
-    USART_RXMODE;                   /* enable USART RX */
+    USART_RXMODE;                   /* Enable USART RX */
     xnrf_powerup_tx(&xnrf_config);  /* Power up transmitter */
     _delay_ms(5);                   /* Give the radio time to stabilize */
-    xnrf_enable(&xnrf_config);      /* Enable and stay in Standby-II mode, auto-sending as data hits the TX FIFO */
-
+    //xnrf_enable(&xnrf_config);      /* Enable and stay in Standby-II mode, auto-sending as data hits the TX FIFO */
+        
     while(1) {
         //TODO: This needs a timeout check or some way to handle packets < 32 bytes.  Timer facilty that resets from RX ISR?
         //TODO:  Actually, this doesn't work at all right now. Big design flaw.. really didn't think this one through :)
-        while(usart_counter < 32);                      /* spin our wheels until we have a full packet to forward */
-        xnrf_write_payload(&xnrf_config, &rxbuff, 32);  /* send the packet off */
-        usart_counter = 0;                              /* reset our counter */
+        while(usart_counter < 32);                      /* Spin our wheels until we have a full packet to forward */
+        xnrf_write_payload(&xnrf_config, &rxbuff, 32);  /* Send the packet off */
+        xnrf_enable(&xnrf_config);                      /* Pulse the nRF to start TX */
+        _delay_us(150);                                 /* -for 130us per datahseet */
+        xnrf_disable(&xnrf_config);                     /* End pulse */
+        usart_counter = 0;                              /* Reset our counter */
         PORTA.OUTTGL = PIN0_bm;                         /* Toggle status LED */
     }
 }
