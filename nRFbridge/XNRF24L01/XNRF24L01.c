@@ -62,21 +62,51 @@ void xnrf_write_register_buffer(xnrf_config_t *config, uint8_t reg, uint8_t *dat
     xnrf_deselect(config);	
 }
 
-void xnrf_read_payload(xnrf_config_t *config, RingBuff_t *buffer, uint8_t len) {
+void xnrf_read_payload(xnrf_config_t *config, uint8_t *data, uint8_t len) {
+    xnrf_select(config);
+    xspi_transfer_byte(config->spi, R_RX_PAYLOAD);
+    while (len--)
+        *data++ = xspi_transfer_byte(config->spi, NRF_NOP);
+    xnrf_deselect(config);	
+}
+
+void xnrf_read_payload_buffer(xnrf_config_t *config, RingBuff_t *buffer, uint8_t len) {
     xnrf_select(config);
     xspi_transfer_byte(config->spi, R_RX_PAYLOAD);
     while (len--)
         RingBuffer_Insert(buffer, xspi_transfer_byte(config->spi, NRF_NOP));
-        //*data++ = xspi_transfer_byte(config->spi, NRF_NOP);
     xnrf_deselect(config);	
 }
 
-void xnrf_write_payload(xnrf_config_t *config, RingBuff_t *buffer, uint8_t len) {
+void xnrf_write_payload(xnrf_config_t *config, uint8_t *data, uint8_t len) {
     xnrf_select(config);
     xspi_transfer_byte(config->spi, W_TX_PAYLOAD);
     while (len--)
-        xspi_transfer_byte(config->spi, RingBuffer_Remove(buffer));
-        //xspi_transfer_byte(config->spi, *data++);
+        xspi_transfer_byte(config->spi, *data++);
+    xnrf_deselect(config);
+}
+
+void xnrf_write_payload_buffer(xnrf_config_t *config, RingBuff_t *buffer, uint8_t len) {
+    xnrf_select(config);
+    xspi_transfer_byte(config->spi, W_TX_PAYLOAD);
+    while (len--)
+    xspi_transfer_byte(config->spi, RingBuffer_Remove(buffer));
+    xnrf_deselect(config);
+}
+
+void xnrf_write_payload_noack(xnrf_config_t *config, uint8_t *data, uint8_t len) {
+    xnrf_select(config);
+    xspi_transfer_byte(config->spi, W_TX_PAYLOAD_NOACK);
+    while (len--)
+    xspi_transfer_byte(config->spi, *data++);
+    xnrf_deselect(config);
+}
+
+void xnrf_write_payload_buffer_noack(xnrf_config_t *config, RingBuff_t *buffer, uint8_t len) {
+    xnrf_select(config);
+    xspi_transfer_byte(config->spi, W_TX_PAYLOAD_NOACK);
+    while (len--)
+    xspi_transfer_byte(config->spi, RingBuffer_Remove(buffer));
     xnrf_deselect(config);
 }
 

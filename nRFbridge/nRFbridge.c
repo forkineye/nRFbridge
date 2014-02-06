@@ -110,8 +110,8 @@ void init() {
 
 /* Interrupt handler for nRF hardware interrupt on PC3 */
 ISR(PORTC_INT_vect) {
-    xnrf_read_payload(&xnrf_config, &rxbuff, xnrf_config.payload_width);    /* retrieve the payload */
-    xnrf_write_register(&xnrf_config, NRF_STATUS, (1 << RX_DR));            /* reset the RX_DR status */
+    xnrf_read_payload_buffer(&xnrf_config, &rxbuff, xnrf_config.payload_width); /* retrieve the payload */
+    xnrf_write_register(&xnrf_config, NRF_STATUS, (1 << RX_DR));                /* reset the RX_DR status */
     
     // Keep coming back until FIFO is empty.
     if((xnrf_read_register(&xnrf_config, FIFO_STATUS)) & (1 << RX_EMPTY))
@@ -127,14 +127,12 @@ ISR(USARTD0_RXC_vect) {
 
 /* loop for one way nrf->rs485 bridge */
 void nrf_to_rs485_loop() {
-    USART_TXMODE;       /* enable USART TX */
+    USART_TXMODE;                               /* Enable USART TX */
     while(1) {
-        while(!DFLAG);  /* spin our wheels until we have data */
-        xusart_send_buffer(&USARTD0, &rxbuff);  /* spit out the buffer */
-        //xusart_putchar(&USARTD0, 0x0D);         /* CR */
-        //xusart_putchar(&USARTD0, 0x0A);         /* LF */
+        while(!DFLAG);                          /* Spin our wheels until we have data */
+        DFLAG = false;                          /* Clear our data ready flag */
+        xusart_send_buffer(&USARTD0, &rxbuff);  /* Spit out the buffer */
         PORTA.OUTTGL = PIN0_bm;                 /* Toggle status LED */
-        DFLAG = false;                          /* clear our data ready flag */
     }    
 }
 
@@ -147,18 +145,21 @@ void rs485_to_nrf_loop() {
         
     while(1) {
         //TODO: This needs a timeout check or some way to handle packets < 32 bytes.  Timer facilty that resets from RX ISR?
+        //^---- calculate timeout based on bitrate of a continuous stream of data + some padding.  if we timeout, terminate
+        //      the packet and fire off the payload.  Use variable length payloads or add a header to the data?
         //TODO:  Actually, this doesn't work at all right now. Big design flaw.. really didn't think this one through :)
-        while(usart_counter < 32);                      /* Spin our wheels until we have a full packet to forward */
-        xnrf_write_payload(&xnrf_config, &rxbuff, 32);  /* Send the packet off */
-        xnrf_enable(&xnrf_config);                      /* Pulse the nRF to start TX */
-        _delay_us(150);                                 /* -for 130us per datahseet */
-        xnrf_disable(&xnrf_config);                     /* End pulse */
-        usart_counter = 0;                              /* Reset our counter */
-        PORTA.OUTTGL = PIN0_bm;                         /* Toggle status LED */
+        while(usart_counter < 32);                              /* Spin our wheels until we have a full packet to forward */
+        usart_counter = 0;                                      /* Reset our counter */
+        xnrf_write_payload_buffer(&xnrf_config, &rxbuff, 32);   /* Send the packet off */
+        xnrf_enable(&xnrf_config);                              /* Pulse the nRF to start TX */
+        _delay_us(150);                                         /* -for 130us per datahseet */
+        xnrf_disable(&xnrf_config);                             /* End pulse */
+        PORTA.OUTTGL = PIN0_bm;                                 /* Toggle status LED */
     }
 }
 
-/* loop for bidirectional bridge */
+/* loop for bidirectional bridge - not binary safe due to flow control. implement XMODEM or something? */
+//TODO: Second thoughts on this and not even started.  How will we handle flow control? XON/OFF?  Should note for terminal / config usage only.
 void bidrectional_loop() {
     while(1) {
 

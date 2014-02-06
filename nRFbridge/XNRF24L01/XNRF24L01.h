@@ -85,17 +85,47 @@ void xnrf_write_register_buffer(xnrf_config_t *config, uint8_t reg, uint8_t *dat
 
 /*! \brief Retrieves a payload.
  *  \param config   Pointer to a xnrf_config_t structure.
+ *  \param data     Pointer to a buffer to hold our data.
+ *  \param len      Length of the payload you're retrieving.
+ */
+void xnrf_read_payload(xnrf_config_t *config, uint8_t *data, uint8_t len);
+
+/*! \brief Retrieves a payload.
+ *  \param config   Pointer to a xnrf_config_t structure.
  *  \param buffer   Pointer to a RingBuffer structure to hold our data.
  *  \param len      Length of the payload you're retrieving.
  */
-void xnrf_read_payload(xnrf_config_t *config, RingBuff_t *buffer, uint8_t len);
+void xnrf_read_payload_buffer(xnrf_config_t *config, RingBuff_t *buffer, uint8_t len);
+
+/*! \brief Writes a payload to be transmitted.
+ *  \param config   Pointer to a xnrf_config_t structure.
+ *  \param data     Pointer to a buffer that holds our data to send.
+ *  \param len      Size of the payload we are sending.
+ */
+void xnrf_write_payload(xnrf_config_t *config, uint8_t *data, uint8_t len);
 
 /*! \brief Writes a payload to be transmitted.
  *  \param config   Pointer to a xnrf_config_t structure.
  *  \param buffer   Pointer to a RingBuffer structure that holds our data.
  *  \param len      Size of the payload we are sending.
  */
-void xnrf_write_payload(xnrf_config_t *config, RingBuff_t *buffer, uint8_t len);
+void xnrf_write_payload_buffer(xnrf_config_t *config, RingBuff_t *buffer, uint8_t len);
+
+/*! \brief Writes a payload to be transmitted, explicitly disabling ACKs.
+ *  \note Use this if you need to send packets w/o ACKs when configured to receive dynamic payloads.
+ *  \param config   Pointer to a xnrf_config_t structure.
+ *  \param data     Pointer to a buffer that holds our data to send.
+ *  \param len      Size of the payload we are sending.
+ */
+void xnrf_write_payload_noack(xnrf_config_t *config, uint8_t *data, uint8_t len);
+
+/*! \brief Writes a payload to be transmitted, explicitly disabling ACKs.
+ *  \note Use this if you need to send packets w/o ACKs when configured to receive dynamic payloads.
+ *  \param config   Pointer to a xnrf_config_t structure.
+ *  \param buffer   Pointer to a RingBuffer structure that holds our data.
+ *  \param len      Size of the payload we are sending.
+ */
+void xnrf_write_payload_buffer_noack(xnrf_config_t *config, RingBuff_t *buffer, uint8_t len);
 
 /*! \brief Sets the air datarate.
  *  \param config   Pointer to a xnrf_config_t structure.

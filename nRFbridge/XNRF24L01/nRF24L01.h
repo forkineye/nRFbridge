@@ -102,18 +102,19 @@
 #define EN_DYN_ACK  0
 
 /* Instruction Mnemonics */
-#define R_REGISTER    0x00
-#define W_REGISTER    0x20
-#define REGISTER_MASK 0x1F
-#define ACTIVATE      0x50
-#define R_RX_PL_WID   0x60
-#define R_RX_PAYLOAD  0x61
-#define W_TX_PAYLOAD  0xA0
-#define W_ACK_PAYLOAD 0xA8
-#define FLUSH_TX      0xE1
-#define FLUSH_RX      0xE2
-#define REUSE_TX_PL   0xE3
-#define NRF_NOP       0xFF
+#define R_REGISTER          0x00
+#define W_REGISTER          0x20
+#define R_RX_PAYLOAD        0x61
+#define W_TX_PAYLOAD        0xA0
+#define FLUSH_TX            0xE1
+#define FLUSH_RX            0xE2
+#define REUSE_TX_PL         0xE3
+#define R_RX_PL_WID         0x60
+#define W_ACK_PAYLOAD       0xA8
+#define W_TX_PAYLOAD_NOACK  0xB0
+#define NRF_NOP             0xFF
+#define REGISTER_MASK       0x1F
+#define ACTIVATE            0x50
 
 /* Non-P omissions */
 #define LNA_HCURR	0
