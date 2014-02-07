@@ -25,52 +25,9 @@
 #include <avr/io.h>
 #include <stdbool.h>
 
-/*
- * \brief Set the baudrate value in the USART module
- *
- * ** This is borrowed from ASF - Thanks Atmel :) **
- *
- * This function sets the baudrate register with scaling regarding the CPU
- * frequency and makes sure the baud rate is supported by the hardware.
- * The function can be used if you don't want to calculate the settings
- * yourself or changes to baudrate at runtime is required.
- *
- * \param usart The USART module.
- * \param baud The baudrate.
- * \param cpu_hz The CPU frequency.
- *
- * \retval true if the hardware supports the baud rate
- * \retval false if the hardware does not support the baud rate (i.e. it's
- *               either too high or too low.)
- */
-bool xusart_set_baudrate(USART_t *usart, uint32_t baud, uint32_t cpu_hz);
-
-/*! \brief Sends a packet of data.
- *  \param usart    Pointer to USART_t module structure.
- *  \param data     Pointer to the data packet to send.
- *  \param len      Size of the buffer in bytes.
- */
-void xusart_send_packet(USART_t *usart, uint8_t *data, uint8_t len);
-
-/*! \brief Blocking call that retrieves a packet of data.
- *  \param usart    Pointer to USART_t module structure.
- *  \param data     Pointer to a buffer to hold our data packet.
- *  \param len      Size of the buffer in bytes.
- */
-void xusart_get_packet(USART_t *usart, uint8_t *data, uint8_t len);
-
-/*! \brief Sends all the contents of a RingBuffer object.
- *  \param usart    Pointer to USART_t module structure.
- *  \param buffer   Pointer to a RingBuffer structure that contains our data.
-  */
-void xusart_send_buffer(USART_t *usart, RingBuff_t *buffer);
-
-/*! \brief Blocking call that retrieves a packet to a RingBuffer object.
- *  \param usart    Pointer to USART_t module structure.
- *  \param buffer   Pointer to a RingBuffer structure to hold our data.
- *  \param len      Size of the buffer in bytes.
- */
-void xusart_get_buffer(USART_t *usart, RingBuff_t *buffer, uint8_t len);
+/************************************************************************/
+/* INLINE FUNCTIONS                                                     */
+/************************************************************************/
 
 /*! \brief Function that sets the USART frame format.
  *  \param usart        Pointer to the USART module.
@@ -113,18 +70,9 @@ static inline void xusart_disable_tx(USART_t *usart) {
      usart->CTRLB &= ~USART_TXEN_bm;
 }     
 
-/*! \brief Set the mode the USART run in.
- *
- * Set the mode the USART run in. The default mode is asynchronous mode.
- *
- *  \param  usart   Pointer to the USART module register section.
- *  \param  mode    Selects the USART mode. Use  USART_CMODE_t type.
- *
- *  USART modes:
- *  - 0x0        : Asynchronous mode.
- *  - 0x1        : Synchronous mode.
- *  - 0x2        : IrDA mode.
- *  - 0x3        : Master SPI mode.
+/*! \brief Set the mode for the USART run in. Default mode is asynchronous mode.
+ *  \param  usart   Pointer to the USART module.
+ *  \param  mode    Selects the USART mode.
  */
 static inline void xusart_set_mode(USART_t *usart, USART_CMODE_t mode) {                                      \
 	usart->CTRLC = (usart->CTRLC & ~USART_CMODE_gm) | mode;
@@ -146,6 +94,72 @@ static inline void xusart_putchar(USART_t *usart, uint8_t data) {
 static inline uint8_t xusart_getchar(USART_t *usart) {
     while (!(usart->STATUS & USART_RXCIF_bm));
     return usart->DATA;
-}    
+}
+
+/*! \brief Sends a packet of data.
+ *  \param usart    Pointer to USART_t module structure.
+ *  \param data     Pointer to the data packet to send.
+ *  \param len      Size of the buffer in bytes.
+ */
+static inline void xusart_send_packet(USART_t *usart, uint8_t *data, uint8_t len) {
+    while (len--)
+    xusart_putchar(usart, *data++);
+}
+
+/*! \brief Blocking call that retrieves a packet of data.
+ *  \param usart    Pointer to USART_t module structure.
+ *  \param data     Pointer to a buffer to hold our data packet.
+ *  \param len      Size of the buffer in bytes.
+ */
+static inline void xusart_get_packet(USART_t *usart, uint8_t *data, uint8_t len) {
+    while (len--) {
+        *data++ = xusart_getchar(usart);
+    }
+}
+
+/*! \brief Sends all the contents of a RingBuffer object.
+ *  \param usart    Pointer to USART_t module structure.
+ *  \param buffer   Pointer to a RingBuffer structure that contains our data.
+  */
+static inline void xusart_send_buffer(USART_t *usart, RingBuff_t *buffer) {
+    uint8_t len = RingBuffer_GetCount(buffer);
+    while (len--)
+    xusart_putchar(usart, RingBuffer_Remove(buffer));
+}
+
+/*! \brief Blocking call that retrieves a packet to a RingBuffer object.
+ *  \param usart    Pointer to USART_t module structure.
+ *  \param buffer   Pointer to a RingBuffer structure to hold our data.
+ *  \param len      Size of the buffer in bytes.
+ */
+static inline void xusart_get_buffer(USART_t *usart, RingBuff_t *buffer, uint8_t len) {
+    while (len--) {
+        RingBuffer_Insert(buffer, xusart_getchar(usart));
+    }
+}
+
+/************************************************************************/
+/* CALLED FUNCTIONS                                                     */
+/************************************************************************/
+
+/*
+ * \brief Set the baudrate value in the USART module
+ *
+ * ** This is borrowed from ASF - Thanks Atmel :) **
+ *
+ * This function sets the baudrate register with scaling regarding the CPU
+ * frequency and makes sure the baud rate is supported by the hardware.
+ * The function can be used if you don't want to calculate the settings
+ * yourself or changes to baudrate at runtime is required.
+ *
+ * \param usart The USART module.
+ * \param baud The baudrate.
+ * \param cpu_hz The CPU frequency.
+ *
+ * \retval true if the hardware supports the baud rate
+ * \retval false if the hardware does not support the baud rate (i.e. it's
+ *               either too high or too low.)
+ */
+bool xusart_set_baudrate(USART_t *usart, uint32_t baud, uint32_t cpu_hz);
 
 #endif /* XUSART_H_ */
