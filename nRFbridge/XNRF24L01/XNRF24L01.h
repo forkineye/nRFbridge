@@ -59,88 +59,6 @@ typedef enum {
 } xnrf_datarate_t;
 
 /************************************************************************/
-/* Called functions                                                     */
-/************************************************************************/
-
-/*! \brief Initializes XNRF by setting up SPI according to the config structure and settings intial radio parameters.
-  *  \param config  Pointer to a xnrf_config_t structure.
-  */
-void xnrf_init(xnrf_config_t *config);
-
-/*! \brief Retrieves an array of bytes for the given register.
- *  \param config   Pointer to a xnrf_config_t structure.
- *  \param reg      Register to trigger the query.
- *  \param data     Address of a buffer to hold the returned data.
- *  \param len      Length of the data you're retrieving.
- */
-void xnrf_read_register_buffer(xnrf_config_t *config, uint8_t reg, uint8_t *data, uint8_t len);
-
-/*! \brief Writes an array of bytes for the given register.
- *  \param config   Pointer to a xnrf_config_t structure.
- *  \param reg      Register to trigger the write.
- *  \param data     Pointer to the data we are sending.
- *  \param len      Size of the data we are sending.
- */
-void xnrf_write_register_buffer(xnrf_config_t *config, uint8_t reg, uint8_t *data, uint8_t len);
-
-/*! \brief Retrieves a payload.
- *  \param config   Pointer to a xnrf_config_t structure.
- *  \param data     Pointer to a buffer to hold our data.
- *  \param len      Length of the payload you're retrieving.
- */
-void xnrf_read_payload(xnrf_config_t *config, uint8_t *data, uint8_t len);
-
-/*! \brief Retrieves a payload.
- *  \param config   Pointer to a xnrf_config_t structure.
- *  \param buffer   Pointer to a RingBuffer structure to hold our data.
- *  \param len      Length of the payload you're retrieving.
- */
-void xnrf_read_payload_buffer(xnrf_config_t *config, RingBuff_t *buffer, uint8_t len);
-
-/*! \brief Writes a payload to be transmitted.
- *  \param config   Pointer to a xnrf_config_t structure.
- *  \param data     Pointer to a buffer that holds our data to send.
- *  \param len      Size of the payload we are sending.
- */
-void xnrf_write_payload(xnrf_config_t *config, uint8_t *data, uint8_t len);
-
-/*! \brief Writes a payload to be transmitted.
- *  \param config   Pointer to a xnrf_config_t structure.
- *  \param buffer   Pointer to a RingBuffer structure that holds our data.
- *  \param len      Size of the payload we are sending.
- */
-void xnrf_write_payload_buffer(xnrf_config_t *config, RingBuff_t *buffer, uint8_t len);
-
-/*! \brief Writes a payload to be transmitted, explicitly disabling ACKs.
- *  \note Use this if you need to send packets w/o ACKs when configured to receive dynamic payloads.
- *  \param config   Pointer to a xnrf_config_t structure.
- *  \param data     Pointer to a buffer that holds our data to send.
- *  \param len      Size of the payload we are sending.
- */
-void xnrf_write_payload_noack(xnrf_config_t *config, uint8_t *data, uint8_t len);
-
-/*! \brief Writes a payload to be transmitted, explicitly disabling ACKs.
- *  \note Use this if you need to send packets w/o ACKs when configured to receive dynamic payloads.
- *  \param config   Pointer to a xnrf_config_t structure.
- *  \param buffer   Pointer to a RingBuffer structure that holds our data.
- *  \param len      Size of the payload we are sending.
- */
-void xnrf_write_payload_buffer_noack(xnrf_config_t *config, RingBuff_t *buffer, uint8_t len);
-
-/*! \brief Sets the air datarate.
- *  \param config   Pointer to a xnrf_config_t structure.
- *  \param rate     Datarate to use.
- */
-void xnrf_set_datarate(xnrf_config_t *config, xnrf_datarate_t rate);
-
-/*! \brief Sets the TX/RX Address width.
- *  \param config   Pointer to a xnrf_config_t structure.
- *  \param width    Width of the address.  Valid values are 3-5.
- */
-void xnrf_set_address_width(xnrf_config_t *config, uint8_t width);
-
-
-/************************************************************************/
 /* INLINE FUCTIONS                                                      */
 /************************************************************************/
 
@@ -264,6 +182,114 @@ static inline void xnrf_set_channel (xnrf_config_t *config, uint8_t channel) {
     xnrf_write_register(config, RF_CH, channel);
 }
 
+/*! \brief Retrieves an array of bytes for the given register.
+ *  \param config   Pointer to a xnrf_config_t structure.
+ *  \param reg      Register to trigger the query.
+ *  \param data     Address of a buffer to hold the returned data.
+ *  \param len      Length of the data you're retrieving.
+ */
+static inline void xnrf_read_register_buffer(xnrf_config_t *config, uint8_t reg, uint8_t *data, uint8_t len) {
+    xnrf_select(config);
+    xspi_transfer_byte(config->spi, (R_REGISTER | (REGISTER_MASK & reg)));
+    while (len--)
+        *data++ = xspi_transfer_byte(config->spi, NRF_NOP);
+    xnrf_deselect(config);
+}
+    
+/*! \brief Writes an array of bytes for the given register.
+ *  \param config   Pointer to a xnrf_config_t structure.
+ *  \param reg      Register to trigger the write.
+ *  \param data     Pointer to the data we are sending.
+ *  \param len      Size of the data we are sending.
+ */
+static inline void xnrf_write_register_buffer(xnrf_config_t *config, uint8_t reg, uint8_t *data, uint8_t len) {
+    xnrf_select(config);
+    xspi_transfer_byte(config->spi, (W_REGISTER | (REGISTER_MASK & reg)));
+    while (len--)
+        xspi_transfer_byte(config->spi, *data++);
+    xnrf_deselect(config);
+}
+
+/*! \brief Retrieves a payload.
+ *  \param config   Pointer to a xnrf_config_t structure.
+ *  \param data     Pointer to a buffer to hold our data.
+ *  \param len      Length of the payload you're retrieving.
+ */
+static inline void xnrf_read_payload(xnrf_config_t *config, uint8_t *data, uint8_t len) {
+    xnrf_select(config);
+    xspi_transfer_byte(config->spi, R_RX_PAYLOAD);
+    while (len--)
+        *data++ = xspi_transfer_byte(config->spi, NRF_NOP);
+    xnrf_deselect(config);
+}
+
+/*! \brief Retrieves a payload.
+ *  \param config   Pointer to a xnrf_config_t structure.
+ *  \param buffer   Pointer to a RingBuffer structure to hold our data.
+ *  \param len      Length of the payload you're retrieving.
+ */
+static inline void xnrf_read_payload_buffer(xnrf_config_t *config, RingBuff_t *buffer, uint8_t len) {
+    xnrf_select(config);
+    xspi_transfer_byte(config->spi, R_RX_PAYLOAD);
+    while (len--)
+        RingBuffer_Insert(buffer, xspi_transfer_byte(config->spi, NRF_NOP));
+    xnrf_deselect(config);
+}
+
+/*! \brief Writes a payload to be transmitted.
+ *  \param config   Pointer to a xnrf_config_t structure.
+ *  \param data     Pointer to a buffer that holds our data to send.
+ *  \param len      Size of the payload we are sending.
+ */
+static inline void xnrf_write_payload(xnrf_config_t *config, uint8_t *data, uint8_t len) {
+    xnrf_select(config);
+    xspi_transfer_byte(config->spi, W_TX_PAYLOAD);
+    while (len--)
+        xspi_transfer_byte(config->spi, *data++);
+    xnrf_deselect(config);
+}
+
+/*! \brief Writes a payload to be transmitted.
+ *  \param config   Pointer to a xnrf_config_t structure.
+ *  \param buffer   Pointer to a RingBuffer structure that holds our data.
+ *  \param len      Size of the payload we are sending.
+ */
+static inline void xnrf_write_payload_buffer(xnrf_config_t *config, RingBuff_t *buffer, uint8_t len) {
+    xnrf_select(config);
+    xspi_transfer_byte(config->spi, W_TX_PAYLOAD);
+    while (len--)
+        xspi_transfer_byte(config->spi, RingBuffer_Remove(buffer));
+    xnrf_deselect(config);
+}
+
+/*! \brief Writes a payload to be transmitted, explicitly disabling ACKs.
+ *  \note Use this if you need to send packets w/o ACKs when configured to receive dynamic payloads.
+ *  \param config   Pointer to a xnrf_config_t structure.
+ *  \param data     Pointer to a buffer that holds our data to send.
+ *  \param len      Size of the payload we are sending.
+ */
+static inline void xnrf_write_payload_noack(xnrf_config_t *config, uint8_t *data, uint8_t len) {
+    xnrf_select(config);
+    xspi_transfer_byte(config->spi, W_TX_PAYLOAD_NOACK);
+    while (len--)
+        xspi_transfer_byte(config->spi, *data++);
+    xnrf_deselect(config);
+}
+
+/*! \brief Writes a payload to be transmitted, explicitly disabling ACKs.
+ *  \note Use this if you need to send packets w/o ACKs when configured to receive dynamic payloads.
+ *  \param config   Pointer to a xnrf_config_t structure.
+ *  \param buffer   Pointer to a RingBuffer structure that holds our data.
+ *  \param len      Size of the payload we are sending.
+ */
+static inline void xnrf_write_payload_buffer_noack(xnrf_config_t *config, RingBuff_t *buffer, uint8_t len) {
+    xnrf_select(config);
+    xspi_transfer_byte(config->spi, W_TX_PAYLOAD_NOACK);
+    while (len--)
+        xspi_transfer_byte(config->spi, RingBuffer_Remove(buffer));
+    xnrf_deselect(config);
+}
+
 /*! \brief Sets the TX Address.
  *  \param config   Pointer to a xnrf_config_t structure.
  *  \param address  Pointer to the address to set.
@@ -321,5 +347,26 @@ static inline void xnrf_set_rx4_address(xnrf_config_t *config, uint8_t lsb) {
 static inline void xnrf_set_rx5_address(xnrf_config_t *config, uint8_t lsb) {
     xnrf_write_register(config, RX_ADDR_P5, lsb);
 }
+
+/************************************************************************/
+/* Called functions                                                     */
+/************************************************************************/
+
+/*! \brief Initializes XNRF by setting up SPI according to the config structure and settings initial radio parameters.
+  *  \param config  Pointer to a xnrf_config_t structure.
+  */
+void xnrf_init(xnrf_config_t *config);
+
+/*! \brief Sets the air datarate.
+ *  \param config   Pointer to a xnrf_config_t structure.
+ *  \param rate     Datarate to use.
+ */
+void xnrf_set_datarate(xnrf_config_t *config, xnrf_datarate_t rate);
+
+/*! \brief Sets the TX/RX Address width.
+ *  \param config   Pointer to a xnrf_config_t structure.
+ *  \param width    Width of the address.  Valid values are 3-5.
+ */
+void xnrf_set_address_width(xnrf_config_t *config, uint8_t width);
 
 #endif /* XNRF24L01_H_ */
