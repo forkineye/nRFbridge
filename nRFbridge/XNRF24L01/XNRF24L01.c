@@ -24,7 +24,8 @@
 //TODO: Change xnrf_init so it doesn't assume a 32MHz clock, or change xspi_master_init to reference baud rates.
 //TODO: Change this to xnrf_init_spi and add xnrf_init_usart??
 void xnrf_init(xnrf_config_t *config) {
-    // Make sure our nRF powered and stabilized, per the datasheet for power-on state transition. 
+    // Make sure our nRF is powered, disabled, and stabilized per the datasheet for power-on state transition.
+    xnrf_disable(config);
     _delay_ms(100);
     
     // Initialize SPI to 4Mhz, assume a 32Mhz clock

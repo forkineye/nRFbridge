@@ -148,6 +148,17 @@ static inline void xnrf_write_register(xnrf_config_t *config, uint8_t reg, uint8
     xnrf_deselect(config);
 }
 
+/*! \brief Reads RX payload width for the top payload in RX FIFO
+  * \param config   Pointer to a xnrf_config_t structure.
+  */
+static inline uint8_t xnrf_get_rx_width(xnrf_config_t *config) {
+    xnrf_select(config);
+    xspi_transfer_byte(config->spi, R_RX_PL_WID);
+    uint8_t result = xspi_transfer_byte(config->spi, NRF_NOP);
+    xnrf_deselect(config);
+    return result;
+}
+
 //TODO: need to move confbits elsewhere to they can change at runtime
 /*! \brief Powers up the nRF in TX mode.
  *  \param config   Pointer to a xnrf_config_t structure.

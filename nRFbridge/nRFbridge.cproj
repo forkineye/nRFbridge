@@ -112,6 +112,9 @@
     <Compile Include="nRFbridge.c">
       <SubType>compile</SubType>
     </Compile>
+    <Compile Include="renard.h">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="RingBuffer.h">
       <SubType>compile</SubType>
     </Compile>
