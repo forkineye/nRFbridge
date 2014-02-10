@@ -28,6 +28,17 @@
 #define NRF_RATE    XNRF_250KBPS    /* default nRF data rate */
 #define ADDR_P0     0xF0F0F0F0E1LL  /* default Pipe 0 address */
 #define ADDR_P1     0xF0F0F0F0D2LL  /* default Pipe 1 address */
+#define NRF_CBITS   0b00111100      /* default configuration bits - 2 byte CRC, RX_DR enabled */
+/*                    ^^^^^^^^
+ *                    ||||||||_____ PRIM_RX - RX/TX control
+ *                    |||||||______ PWR_UP - Power control         
+ *                    ||||||_______ CRCO - CRC encoding scheme; '0' - 1 byte, '1' - 2 bytes
+ *                    |||||________ EN_CRC - Enable CRC
+ *                    ||||_________ MASK_MAX_RT - Reflect max retry on IRQ pin - '0' to enable
+ *                    |||__________ MASK_TX_DS - Reflect TX data sent on IRQ pin - '0' to enable
+ *                    ||___________ MASK_RX_DR - Reflect RX data received on IRQ pin - '0' to enable
+ *                    |____________ RESERVED - Only '0' allowed
+ */
 
 /* XUSART Config */
 #define USART_BAUDRATE  115200

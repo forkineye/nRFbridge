@@ -22,6 +22,7 @@
 #include <avr/interrupt.h>
 #include <util/delay.h>
 #include <stdbool.h>
+#include <string.h>
 #include "XUSART/XUSART.h"
 #include "XNRF24L01/XNRF24L01.h"
 #include "renard.h"
@@ -39,16 +40,12 @@ xnrf_config_t xnrf_config = {
     .ce_pin  = 2,
     .addr_width = 5,
     .payload_width = 32,
-    .confbits = 0b00111100    // RX interrupt enabled
-    //.confbits = 0b00001100  // All interrupts enabled
-    //.confbits = ((1 << EN_CRC) | (1 << CRCO)) //TODO: move confbits elsewhere for runtime config changes
+    .confbits = NRF_CBITS
 };
 
-uint64_t addr_p0 = ADDR_P0;         /* default nRF address for TX and Pipe 0 RX */
-uint64_t addr_p1 = ADDR_P1;         /* default nRF address for Pipe 1 RX */    
-RingBuff_t  rxbuff;                 /* Ring buffer to hold our data */
-volatile bool DFLAG = false;        /* nRF Data ready flag */
-volatile uint8_t usart_counter = 0; /* counter to keep track of buffer updates in USART RX ISR */
+uint64_t    addr_p0 = ADDR_P0;  /* default nRF address for TX and Pipe 0 RX */
+uint64_t    addr_p1 = ADDR_P1;  /* default nRF address for Pipe 1 RX */    
+RingBuff_t  rxbuff;             /* Ring buffer to hold our data */
 
 /* Initialize the board */
 //TODO: Add DMA support
@@ -69,11 +66,12 @@ void init() {
     PORTA.DIRSET = PIN0_bm;             /* Status LED */
     PORTD.DIRSET = PIN1_bm | PIN3_bm;   /* USART Clock TX line (3) and direction control (1) */
     
-    // Configure the nRF
+    // Configure the nRF radio
     xnrf_init(&xnrf_config);                                /* initialize the XNRF driver */
     xnrf_set_channel(&xnrf_config, NRF_CHANNEL);            /* set our channel */
     xnrf_set_datarate(&xnrf_config, NRF_RATE);              /* set our data rate */
     xnrf_write_register(&xnrf_config, EN_AA, 0);            /* disable auto ack's */
+    xnrf_write_register(&xnrf_config, SETUP_RETR, 0);       /* disable auto retries */
     xnrf_write_register(&xnrf_config, EN_RXADDR, 3);        /* listen on pipes 0 & 1 */
     xnrf_set_tx_address(&xnrf_config, (uint8_t*)&addr_p0);  /* set TX address */
     xnrf_set_rx0_address(&xnrf_config, (uint8_t*)&addr_p0); /* set Pipe 0 address */
@@ -100,7 +98,7 @@ void init() {
     
     // Initialize listening on both RS485 line and nRF.  First in determines bridge direction
     xnrf_powerup_rx(&xnrf_config);  /* Power-up nRF in RX mode */
-    _delay_us(150);                 /* Let the radio stabilize - 130us per datasheet */
+    _delay_ms(5);                   /* Let the radio stabilize - Section 6.1.7 - Tpd2stdby */
     
     // Enable interrupts and start listening
     PMIC.CTRL |= PMIC_LOLVLEN_bm;   /* Enable low interrupts */
@@ -111,54 +109,47 @@ void init() {
 
 /* Interrupt handler for nRF hardware interrupt on PC3 */
 ISR(PORTC_INT_vect) {
-    xnrf_read_payload_buffer(&xnrf_config, &rxbuff,                 /* retrieve the payload */
-            xnrf_get_rx_width(&xnrf_config));
-    xnrf_write_register(&xnrf_config, NRF_STATUS, (1 << RX_DR));    /* reset the RX_DR status */
+    xnrf_read_payload_buffer(&xnrf_config, &rxbuff, xnrf_config.payload_width); /* retrieve the payload */
+    xnrf_write_register(&xnrf_config, NRF_STATUS, (1 << RX_DR));                /* reset the RX_DR status */    
     
     // Keep coming back until FIFO is empty.
     if((xnrf_read_register(&xnrf_config, FIFO_STATUS)) & (1 << RX_EMPTY))
-        PORTC.INTFLAGS = PIN3_bm;   /* Clear interrupt flag for PC3 */
-    DFLAG = true;            
+        PORTC.INTFLAGS = PIN3_bm;                                               /* Clear interrupt flag for PC3 */
  }
 
 /* Interrupt handler for USART RX on Port D - Every 1100 clock cycles @ 115,200? Polling instead? */
 ISR(USARTD0_RXC_vect) {
     RingBuffer_Insert(&rxbuff, xusart_getchar(&USARTD0));   /* get the byte */
-    usart_counter++;
 }
 
 /* loop for one way nrf->rs485 bridge */
 void nrf_to_rs485_loop() {
-    USART_TXMODE;                                               /* Enable USART TX */
-    xnrf_write_register(&xnrf_config, FEATURE, (1 << EN_DPL));  /* Enable dynamic payloads */
-    xnrf_write_register(&xnrf_config, DYNPD, (1 << DPL_P0));    /* on Pipes 0 only for now */
-    
+    USART_TXMODE;   /* Enable USART TX */
+
     while(1) {
-        while(!DFLAG);                          /* Spin our wheels until we have data */
-        DFLAG = false;                          /* Clear our data ready flag */
+        while(!rxbuff.Count);                   /* Spin our wheels until we have data */
         xusart_send_buffer(&USARTD0, &rxbuff);  /* Spit out the buffer */
         PORTA.OUTTGL = PIN0_bm;                 /* Toggle status LED */
     }    
 }
 
-/* loop for one way rs485->nrf bridge */
-void rs485_to_nrf_loop() {
-    USART_RXMODE;                                               /* Enable USART RX */
-    xnrf_write_register(&xnrf_config, FEATURE, (1 << EN_DPL));  /* Enable dynamic payloads */
-    xnrf_write_register(&xnrf_config, DYNPD, (1 << DPL_P0));    /* on Pipe 0 -- required to TX */
 
-    xnrf_powerup_tx(&xnrf_config);  /* Power up transmitter */
-    _delay_us(150);                 /* Give the radio time to stabilize - 130us per datasheet */
+/* loop for one way rs485->nrf bridge */
+//TODO: Currently broken...
+void rs485_to_nrf_loop() {
+    USART_RXMODE;   /* Enable USART RX */
+
+    xnrf_powerup_tx(&xnrf_config);  /* Configure the radio for TX mode */
+    //_delay_ms(5);                   /* Let the radio stabilize - Section 6.1.7 - Tpd2stdby -- but we're already powered up so not needed */
     //xnrf_enable(&xnrf_config);      /* Enable and stay in Standby-II mode, auto-sending as data hits the TX FIFO */
     xnrf_flush_tx(&xnrf_config);
         
     while(1) {
-        //TODO: This needs a timeout check or some way to handle packets < 32 bytes.  Timer facilty that resets from RX ISR?
+        // This needs a timeout check or some way to handle packets < 32 bytes.  Timer facilty that resets from RX ISR?
         //^---- calculate timeout based on bitrate of a continuous stream of data + some padding.  if we timeout, terminate
         //      the packet and fire off the payload.  Use variable length payloads or add a header to the data?
-        //TODO:  Actually, this doesn't work at all right now. Big design flaw.. really didn't think this one through :)
-        while(usart_counter < 32);                              /* Spin our wheels until we have a full packet to forward */
-        usart_counter = 0;                                      /* Reset our counter */
+        // Actually, this doesn't work at all right now. Big design flaw.. really didn't think this one through :)
+        while(rxbuff.Count < 32);                               /* Spin our wheels until we have a full packet to forward */
         xnrf_write_payload_buffer(&xnrf_config, &rxbuff, 32);   /* Send the packet off */
         xnrf_enable(&xnrf_config);                              /* Pulse the nRF to start TX */
         _delay_us(15);                                          /* -for 10us per datahseet */
@@ -175,40 +166,134 @@ void bidrectional_loop() {
     }
 }
 
+/* Loop for receiving Renard RS485 data and sending as RFPixelControl packets */
+void renard_to_rfp_loop() {
+    uint8_t data;           /* Byte we're processing */
+    uint8_t packet[32];     /* Packet buffer */
+    uint8_t index = 0;      /* Current index of the packet buffer */
+    uint8_t offset = 0;     /* Offset multiplier */
+    renstate_t state = RENSTATE_NULL;
+    
+    USART_RXMODE;                   /* Enable USART RX */
+    xnrf_powerup_tx(&xnrf_config);  /* Configure the radio for TX mode */
+    xnrf_flush_tx(&xnrf_config);    /* Clean the TX pipe for good measure */
+
+    while(1) {
+        /* We have a full load? Send it off! */
+        if (index == 29) {
+            packet[index++] = offset++;                     /* Byte 31 defines offset */
+            packet[index] = 0x00;                           /* Byte 32 is reserved */
+            xnrf_write_payload(&xnrf_config, packet, 32);   /* Load the packet */
+            xnrf_pulse_tx(&xnrf_config);                    /* Send it off */
+            index = 0;                                      /* Reset our index */
+        }
+        
+        while(!rxbuff.Count);               /* Spin our wheels until the buffer has data */
+        data = RingBuffer_Remove(&rxbuff);  /* Grab a byte off the buffer */
+
+        /* Process special characters and set states if needed */
+        switch(data) {
+            case RENARD_PAD:                /* Ignore PAD bytes and wait for next byte */
+                continue;
+            case RENARD_SYNC:               /* Set our state to SYNC and process current packet if needed */
+                state = RENSTATE_SYNC;
+                if(index) {
+                    memset(&packet[index], 0x00, 29 - index);   /* Null out rest of packet. PADs will get translated or would use them */
+                    index = 29;                                 /* Set our index to trigger a TX */
+                }                    
+                continue;
+            case RENARD_ESCAPE:             /* Set our state to ESCAPE and wait for next byte */
+                state = RENSTATE_ESCAPE;
+                continue;
+            default:;
+        }
+
+        /* Decisions, decisions... */
+        switch (state) {
+            case RENSTATE_ESCAPE:           /* We're in ESCAPE state.  Process characters per Renard protocol and set state to NULL. */
+                switch (data) {
+                    case RENARD_ESC_7D:
+                        data = 0x7D;
+                        break;
+                    case RENARD_ESC_7E:
+                        data = 0x7E;
+                        break;
+                    case RENARD_ESC_7F:
+                        data = 0x7F;
+                        break;
+                }
+                state = RENSTATE_NULL;
+                break;
+            case RENSTATE_SYNC:             /* We're in SYNC state.  The byte being processed will be the address / command byte. */
+                state = RENSTATE_NULL;      /* Normally, we'd look at this to see if the packet is for us. Ignored for our purposes. */
+                offset = 0;                 /* Reset the offset multiplier */
+                continue;
+            default:;
+        }            
+            
+        /* What's left is channel data, get to work! */
+        packet[index++] = data;
+
+        PORTA.OUTTGL = PIN0_bm;     /* Toggle status LED */
+    }
+}
+
+/* Loop for receiving RFPixelControl packets and sending as Renard RS485 data */
+void rfp_to_renard_loop() {
+    uint8_t data[30];   /* Color data from our packet */
+    uint8_t offset;     /* Offset multiplier */
+
+    USART_TXMODE;       /* Enable USART TX */
+    
+    while(1) {
+        while(rxbuff.Count < 32);                       /* Spin our wheels until we have a full packet */
+
+        for (uint8_t i = 0; i < 30; i++)
+            data[i] = RingBuffer_Remove(&rxbuff);       /* Pull color data from our buffer */
+        offset = RingBuffer_Remove(&rxbuff);            /* Next byte will be our offset */
+        RingBuffer_Remove(&rxbuff);                     /* and remove the reserved byte */
+
+        if(!offset) {                                   /* If we're at offset 0, this is a new Renard stream */
+            xusart_putchar(&USARTD0, RENARD_SYNC);      /* Send the Renard SYNC byte */
+            xusart_putchar(&USARTD0, RENSTATE_ADDR);    /* and the Command / Address byte */
+        }
+        
+        /* Process and send channel data. Escape Renard special characters. */
+        for (uint8_t i = 0; i < 30; i++) {
+            switch (data[i]) {
+                case RENARD_PAD:
+                    xusart_putchar(&USARTD0, RENARD_ESCAPE);
+                    xusart_putchar(&USARTD0, RENARD_ESC_7D);
+                    break;
+                case RENARD_SYNC:
+                    xusart_putchar(&USARTD0, RENARD_ESCAPE);
+                    xusart_putchar(&USARTD0, RENARD_ESC_7E);
+                    break;
+                case RENARD_ESCAPE:
+                    xusart_putchar(&USARTD0, RENARD_ESCAPE);
+                    xusart_putchar(&USARTD0, RENARD_ESC_7F);
+                    break;
+                default:
+                    xusart_putchar(&USARTD0, data[i]);
+            }                    
+        }            
+    }        
+}    
+
 void test_tx_loop() {
     uint8_t	alphatest[32] = {0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48,
                              0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F, 0x50,
                              0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58,
                              0x59, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E, 0x5F, 0x5F};
     
-    uint8_t numtest[12] = {0x30, 0x31, 0x32, 0x33, 0x34, 
-                           0x35, 0x36, 0x37, 0x38, 0x39,
-                           0x0A, 0x0D};
-
-    USART_RXMODE;                                               /* Enable USART RX */
-    xnrf_write_register(&xnrf_config, FEATURE, (1 << EN_DPL));  /* Enable dynamic payloads */
-    xnrf_write_register(&xnrf_config, DYNPD, (1 << DPL_P0));    /* on Pipe 0 -- required to TX */
-
-    xnrf_powerup_tx(&xnrf_config);  /* Power up transmitter */
-    _delay_us(150);                 /* Give the radio time to stabilize - 130us per datasheet */
-    //xnrf_enable(&xnrf_config);      /* Enable and stay in Standby-II mode, auto-sending as data hits the TX FIFO */
-    
+    xnrf_powerup_tx(&xnrf_config);  /* Configure the radio for TX mode */
+   
     while(1) {
-        xnrf_write_payload(&xnrf_config, alphatest, 30);        /* Send the packet off */
-        xnrf_enable(&xnrf_config);                              /* Pulse the nRF to start TX */
-        _delay_us(15);                                          /* -for 10us per datasheet */
-        xnrf_disable(&xnrf_config);                             /* End pulse */
-
-        _delay_ms(100);
-        xnrf_flush_tx(&xnrf_config);
+        xnrf_write_payload(&xnrf_config, alphatest, 32);    /* Load the packet */
+        xnrf_pulse_tx(&xnrf_config);                        /* Send it off */
         
-        xnrf_write_payload(&xnrf_config, numtest, 12);          /* Send the packet off */
-        xnrf_enable(&xnrf_config);                              /* Pulse the nRF to start TX */
-        _delay_us(15);                                          /* -for 10us per datasheet */
-        xnrf_disable(&xnrf_config);                             /* End pulse */
-
-        PORTA.OUTTGL = PIN0_bm;                                 /* Toggle status LED */
-        _delay_ms(100);
+        PORTA.OUTTGL = PIN0_bm;                             /* Toggle status LED */
+        _delay_ms(1000);
     }
 }
 
@@ -219,5 +304,7 @@ int main(void) {
     //nrf_to_rs485_loop();
     //rs485_to_nrf_loop();
     //bidirectional_loop();
-     test_tx_loop();    
+    //renard_to_rfp_loop();
+    //rfp_to_renard_loop();
+    test_tx_loop();    
 }

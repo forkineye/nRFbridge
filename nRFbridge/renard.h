@@ -34,7 +34,8 @@
 typedef enum {
     RENSTATE_SYNC,
     RENSTATE_ESCAPE,
-    RENSTATE_ADDR
+    RENSTATE_ADDR,
+    RENSTATE_NULL
 } renstate_t;
 
 #endif /* RENARD_H_ */

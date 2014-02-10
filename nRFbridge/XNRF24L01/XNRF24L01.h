@@ -21,6 +21,7 @@
 #define XNRF24L01_H_
 
 #include "../config.h"
+#include <util/delay.h>
 #include "../RingBuffer.h"
 #include "../XSPI/XSPI.h"
 #include "nRF24L01.h"
@@ -28,7 +29,7 @@
 #define NRF_INTERFACE SPI       /* uses hardware SPI */
 //#define NRF_INTERFACE USART   /* uses USART in Master SPI mode */
 
-//TODO: Update this to support USART and move confbits elsewhere.
+//TODO: Update this to support USART
 /*! \brief Structure which defines some items needed for nRF and SPI control.
  *  \param spi              Pointer to the SPI module this nRF is connected to.
  *  \param spi_port         Pointer to the port which the SPI module resides.
@@ -38,7 +39,7 @@
  *  \param ce_pin           Chip Enable pin number.
  *  \param addr_width       Address width to configure.  Valid values are 3-5.
  *  \param payload_width    Default payload width for all Pipes.  Valid values are 0-32.
- *  \param confbits         Configuration bits to be written to the CONFIG register. This shiznit needs to be moved elsewhere.
+ *  \param confbits         Configuration bits to be written to the CONFIG register.
  */
 typedef struct {
     SPI_t *spi;
@@ -159,30 +160,33 @@ static inline uint8_t xnrf_get_rx_width(xnrf_config_t *config) {
     return result;
 }
 
-//TODO: need to move confbits elsewhere to they can change at runtime
 /*! \brief Powers up the nRF in TX mode.
  *  \param config   Pointer to a xnrf_config_t structure.
  */
 static inline void xnrf_powerup_tx (xnrf_config_t *config) {
     config->confbits |= (1 << PWR_UP);
     config->confbits &= ~(1 << PRIM_RX);
+    xnrf_disable(config);
+    _delay_us(5);   /* Datasheet section 6.1.7 - Tpece2csn */
     xnrf_write_register(config, CONFIG, config->confbits);
 }
 
-//TODO: need to move confbits elsewhere to they can change at runtime
 /*! \brief Powers up the nRF in RX mode.
  *  \param config   Pointer to a xnrf_config_t structure.
  */
 static inline void xnrf_powerup_rx (xnrf_config_t *config) {
-    xnrf_write_register(config, CONFIG, (config->confbits | ((1 << PWR_UP) | (1 << PRIM_RX))));
+    config->confbits |= ((1 << PWR_UP) | (1 << PRIM_RX));
+    xnrf_disable(config);
+    _delay_us(5);   /* Datasheet section 6.1.7 - Tpece2csn */
+    xnrf_write_register(config, CONFIG, config->confbits);
 }
 
 /*! \brief Powers down the nRF.
  *  \param config   Pointer to a xnrf_config_t structure.
  */
-//TODO: need to move confbits elsewhere to they can change at runtime
 static inline void xnrf_powerdown (xnrf_config_t *config) {
-    xnrf_write_register(config, CONFIG, (config->confbits & ~(1 << PWR_UP)));
+    config->confbits &= ~(1 << PWR_UP);
+    xnrf_write_register(config, CONFIG, config->confbits);
 }
 
 /*! \brief Sets the nRF channel.
@@ -357,6 +361,15 @@ static inline void xnrf_set_rx4_address(xnrf_config_t *config, uint8_t lsb) {
  */
 static inline void xnrf_set_rx5_address(xnrf_config_t *config, uint8_t lsb) {
     xnrf_write_register(config, RX_ADDR_P5, lsb);
+}
+
+/*! \brief Pulses the CE line for 10us to transmit the payload.
+ *  \param config   Pointer to a xnrf_config_t structure.
+ */
+static inline void xnrf_pulse_tx(xnrf_config_t *config) {
+    xnrf_enable(config);    /* Pulse the nRF to start TX */
+    _delay_us(11);          /* -for 10us per datasheet */
+    xnrf_disable(config);   /* End pulse */
 }
 
 /************************************************************************/

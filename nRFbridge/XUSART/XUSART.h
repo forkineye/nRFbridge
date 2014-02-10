@@ -103,7 +103,7 @@ static inline uint8_t xusart_getchar(USART_t *usart) {
  */
 static inline void xusart_send_packet(USART_t *usart, uint8_t *data, uint8_t len) {
     while (len--)
-    xusart_putchar(usart, *data++);
+        xusart_putchar(usart, *data++);
 }
 
 /*! \brief Blocking call that retrieves a packet of data.
@@ -112,9 +112,8 @@ static inline void xusart_send_packet(USART_t *usart, uint8_t *data, uint8_t len
  *  \param len      Size of the buffer in bytes.
  */
 static inline void xusart_get_packet(USART_t *usart, uint8_t *data, uint8_t len) {
-    while (len--) {
+    while (len--)
         *data++ = xusart_getchar(usart);
-    }
 }
 
 /*! \brief Sends all the contents of a RingBuffer object.
@@ -124,7 +123,7 @@ static inline void xusart_get_packet(USART_t *usart, uint8_t *data, uint8_t len)
 static inline void xusart_send_buffer(USART_t *usart, RingBuff_t *buffer) {
     uint8_t len = RingBuffer_GetCount(buffer);
     while (len--)
-    xusart_putchar(usart, RingBuffer_Remove(buffer));
+        xusart_putchar(usart, RingBuffer_Remove(buffer));
 }
 
 /*! \brief Blocking call that retrieves a packet to a RingBuffer object.
@@ -133,9 +132,8 @@ static inline void xusart_send_buffer(USART_t *usart, RingBuff_t *buffer) {
  *  \param len      Size of the buffer in bytes.
  */
 static inline void xusart_get_buffer(USART_t *usart, RingBuff_t *buffer, uint8_t len) {
-    while (len--) {
+    while (len--)
         RingBuffer_Insert(buffer, xusart_getchar(usart));
-    }
 }
 
 /************************************************************************/

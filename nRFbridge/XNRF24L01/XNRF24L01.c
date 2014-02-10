@@ -19,7 +19,6 @@
 
 #include "XNRF24L01.h"
 #include <avr/io.h>
-#include <util/delay.h>
 
 //TODO: Change xnrf_init so it doesn't assume a 32MHz clock, or change xspi_master_init to reference baud rates.
 //TODO: Change this to xnrf_init_spi and add xnrf_init_usart??
