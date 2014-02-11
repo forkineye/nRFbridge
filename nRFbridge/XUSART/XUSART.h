@@ -25,6 +25,21 @@
 #include <avr/io.h>
 #include <stdbool.h>
 
+/*! \brief Structure which defines items needed for USART control.
+ *  \param usart    Pointer to the USART module.
+ *  \param port     Pointer to the port on which the USART module resides.
+ *  \param tx_pin   TX pin number.
+ *  \param rx_pin   RX pin number (optional).
+ *  \param xck_pin  XCK pin number (optional).
+ */
+typedef struct {
+    USART_t     *usart;
+    PORT_t      *port;
+    uint8_t     tx_pin;
+    uint8_t     rx_pin;
+    uint8_t     xck_pin;
+} xusart_config_t;
+
 /************************************************************************/
 /* INLINE FUNCTIONS                                                     */
 /************************************************************************/
@@ -43,7 +58,7 @@ static inline void xusart_set_format(USART_t *usart, USART_CHSIZE_t chsize, USAR
  *  \param usart Pointer to the USART module
  */
 static inline void xusart_enable_rx(USART_t *usart) {
-     usart->CTRLB |= USART_RXEN_bm;
+    usart->CTRLB |= USART_RXEN_bm;
 }     
 
 
@@ -51,7 +66,7 @@ static inline void xusart_enable_rx(USART_t *usart) {
  *  \param usart Pointer to the USART module.
  */
 static inline void xusart_disable_rx(USART_t *usart) {
-     usart->CTRLB &= ~USART_RXEN_bm;
+    usart->CTRLB &= ~USART_RXEN_bm;
 }     
 
 
@@ -67,7 +82,7 @@ static inline void xusart_enable_tx(USART_t *usart) {
  *  \param _usart Pointer to the USART module.
  */
 static inline void xusart_disable_tx(USART_t *usart) {
-     usart->CTRLB &= ~USART_TXEN_bm;
+    usart->CTRLB &= ~USART_TXEN_bm;
 }     
 
 /*! \brief Set the mode for the USART run in. Default mode is asynchronous mode.
@@ -139,6 +154,11 @@ static inline void xusart_get_buffer(USART_t *usart, RingBuff_t *buffer, uint8_t
 /************************************************************************/
 /* CALLED FUNCTIONS                                                     */
 /************************************************************************/
+
+ /*! \brief Initializes XUSART according to the configuration structure.
+  *  \param config  Pointer to a xusart_config_t structure.
+  */
+void xusart_init(xusart_config_t *config);
 
 /*
  * \brief Set the baudrate value in the USART module

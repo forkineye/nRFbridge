@@ -22,28 +22,32 @@
 
 //TODO: Change xnrf_init so it doesn't assume a 32MHz clock, or change xspi_master_init to reference baud rates.
 //TODO: Change this to xnrf_init_spi and add xnrf_init_usart??
-void xnrf_init(xnrf_config_t *config) {
+void xnrf_init(xnrf_config_t *xnrf_config, xspi_config_t *xspi_config) {
     // Make sure our nRF is powered, disabled, and stabilized per the datasheet for power-on state transition.
-    xnrf_disable(config);
+    xnrf_disable(xnrf_config);
     _delay_ms(100);
     
     // Initialize SPI to 4Mhz, assume a 32Mhz clock
-    config->ss_port->DIRSET = (1 << config->ss_pin);
-    config->ce_port->DIRSET = (1 << config->ce_pin);
-    xspi_master_init(config->spi_port, config->spi, SPI_MODE_0_gc, false, SPI_PRESCALER_DIV16_gc, true);
-    //xspi_usart_master_init(&PORTC, &USARTC0, SPI_MODE_0_gc, 4000000);
+    xnrf_config->ss_port->DIRSET = (1 << xnrf_config->ss_pin);
+    xnrf_config->ce_port->DIRSET = (1 << xnrf_config->ce_pin);
+    xspi_master_init(xspi_config, SPI_MODE_0_gc, false, SPI_PRESCALER_DIV16_gc, true);
     
     // configure address width
-    xnrf_set_address_width(config, config->addr_width);
+    xnrf_set_address_width(xnrf_config, xnrf_config->addr_width);
     
     //TODO: change this to only set default width when pipe is enabled? Does it matter?
     // configure default payload widths for all pipes
-    xnrf_write_register(config, RX_PW_P0, config->payload_width);
-    xnrf_write_register(config, RX_PW_P1, config->payload_width);
-    xnrf_write_register(config, RX_PW_P2, config->payload_width);
-    xnrf_write_register(config, RX_PW_P3, config->payload_width);
-    xnrf_write_register(config, RX_PW_P4, config->payload_width);
-    xnrf_write_register(config, RX_PW_P5, config->payload_width);
+    xnrf_write_register(xnrf_config, RX_PW_P0, xnrf_config->payload_width);
+    xnrf_write_register(xnrf_config, RX_PW_P1, xnrf_config->payload_width);
+    xnrf_write_register(xnrf_config, RX_PW_P2, xnrf_config->payload_width);
+    xnrf_write_register(xnrf_config, RX_PW_P3, xnrf_config->payload_width);
+    xnrf_write_register(xnrf_config, RX_PW_P4, xnrf_config->payload_width);
+    xnrf_write_register(xnrf_config, RX_PW_P5, xnrf_config->payload_width);
+    
+    // Clear nRF status and FIFOs in case we're coming out of a soft reset
+    xnrf_write_register(xnrf_config, NRF_STATUS, ((1 << RX_DR) | (1 << TX_DS) | (1 << MAX_RT)));
+    xnrf_flush_rx(xnrf_config);
+    xnrf_flush_tx(xnrf_config);
 }
 
 void xnrf_set_datarate(xnrf_config_t *config, xnrf_datarate_t rate) {

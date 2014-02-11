@@ -24,40 +24,22 @@
 #include <avr/io.h>
 #include <stdbool.h>
 
-#if defined(__AVR_ATXmega16A4__) || \
-defined (__AVR_ATxmega16A4U__) || \
-defined (__AVR_ATxmega32A4__) || \
-defined (__AVR_ATxmega32A4U__) || \
-defined (__AVR_ATxmega64A4U__) || \
-defined (__AVR_ATxmega128A4U__)
-#   define XSPI_MOSI    PIN5_bm
-#   define XSPI_MISO    PIN6_bm
-#   define XSPI_SCK     PIN7_bm
-#   define XSPI_SS      PIN4_bm
-#   define XSPI_XCK0    PIN1_bm
-#   define XSPI_RXD0    PIN2_bm
-#   define XSPI_TXD0    PIN3_bm
-#   define XSPI_XCK1    PIN5_bm
-#   define XSPI_RXD1    PIN6_bm
-#   define XSPI_TXD1    PIN7_bm
-#elif defined (__AVR_ATxmega8E5__) || \
-defined (__AVR_ATxmega16E5__) || \
-defined (__AVR_ATxmega32E5__)
-#   define XSPI_MOSI    PIN7_bm
-#   define XSPI_MISO    PIN6_bm
-#   define XSPI_SCK     PIN5_bm
-#   define XSPI_SS      PIN4_bm
-#   define XSPI_XCK0    PIN1_bm
-#   define XSPI_RXD0    PIN2_bm
-#   define XSPI_TXD0    PIN3_bm
-/* if remapped? 
-#   define XSPI_XCK1	PIN5_bm
-#   define XSPI_RXD1	PIN6_bm
-#   define XSPI_TXD1	PIN7_bm
-*/
-#else
-#   error ** Device not supported by XSPI **
-#endif
+/*! \brief Structure which defines items needed for SPI control.
+ *  \param usart    Pointer to the SPI module.
+ *  \param port     Pointer to the port on which the SPI module resides.
+ *  \param mosi_pin MOSI pin number.
+ *  \param miso_pin MISO pin number.
+ *  \param sck_pin  SCK pin number.
+ *  \param ss_pin   SS pin number.
+ */
+typedef struct {
+    SPI_t   *spi;
+    PORT_t  *port;
+    uint8_t mosi_pin;
+    uint8_t miso_pin;
+    uint8_t sck_pin;
+    uint8_t ss_pin;
+} xspi_config_t;
 
 /************************************************************************/
 /* Normal hardware SPI stuff                                            */
@@ -71,9 +53,9 @@ defined (__AVR_ATxmega32E5__)
  *  \param prescaler    SPI clock prescaler value.
  *  \param clk2x        Enables SPI clock double-speed.
  */
-static inline void xspi_master_init(PORT_t *port, SPI_t *spi, SPI_MODE_t mode, bool lsb, SPI_PRESCALER_t prescaler, bool clk2x) {
-    port->DIRSET = XSPI_MOSI | XSPI_SCK | XSPI_SS;
-    spi->CTRL = SPI_ENABLE_bm |	SPI_MASTER_bm | mode | prescaler |
+static inline void xspi_master_init(xspi_config_t *config, SPI_MODE_t mode, bool lsb, SPI_PRESCALER_t prescaler, bool clk2x) {
+    config->port->DIRSET = (1 << config->mosi_pin) | (1 << config->sck_pin) | (1 << config->ss_pin);
+    config->spi->CTRL = SPI_ENABLE_bm |	SPI_MASTER_bm | mode | prescaler |
             (clk2x ? SPI_CLK2X_bm : 0) | (lsb ? SPI_DORD_bm : 0);
 }
 
@@ -83,10 +65,10 @@ static inline void xspi_master_init(PORT_t *port, SPI_t *spi, SPI_MODE_t mode, b
  *  \param mode Clock and polarity mode for SPI.
  *  \param lsb  Set to true for LSB data, false for MSB.
  */
-static inline void xspi_slave_init(PORT_t *port, SPI_t *spi, SPI_MODE_t mode, bool lsb) {
-    port->DIRSET = XSPI_MISO;
-    port->DIRCLR = XSPI_SCK | XSPI_SS;
-    spi->CTRL = SPI_ENABLE_bm | mode | (lsb ? SPI_DORD_bm : 0);
+static inline void xspi_slave_init(xspi_config_t *config, SPI_MODE_t mode, bool lsb) {
+    config->port->DIRSET = (1 << config->miso_pin);
+    config->port->DIRCLR = (1 << config->sck_pin) | (1 << config->ss_pin);
+    config->spi->CTRL = SPI_ENABLE_bm | mode | (lsb ? SPI_DORD_bm : 0);
 }
 
 /*! \brief Blocking call that sends and returns a single byte.
@@ -104,15 +86,25 @@ static inline uint8_t xspi_transfer_byte(SPI_t *spi, uint8_t val) {
  *  \param data Pointer to the data being sent.
  *  \param len  Length in bytes of the data being sent.
  */
-void xspi_send_packet(SPI_t *spi, uint8_t *data, uint8_t len);
+static inline void xspi_send_packet(SPI_t *spi, uint8_t *data, uint8_t len) {
+    while (len--) {
+        spi->DATA = *data++;
+        while(!(spi->STATUS & SPI_IF_bm));
+    }
+}
 
 /*! \brief Retrieves a packet of data via SPI
  *  \param spi  Pointer to SPI_t module structure.
  *  \param data Pointer to a buffer to store the retrieved data.
  *  \param len  Size of the buffer in bytes.
  */
-void xspi_get_packet(SPI_t *spi, uint8_t *data, uint8_t len);
-
+static inline void xspi_get_packet(SPI_t *spi, uint8_t *data, uint8_t len) {
+    while (len--) {
+        spi->DATA = 0xFF;
+        while(!(spi->STATUS & SPI_IF_bm));
+        *data++ = spi->DATA;
+    }
+}
 
 /************************************************************************/
 /* USART specific SPI stuff                                             */
@@ -173,13 +165,19 @@ static inline uint8_t xspi_usart_get_byte(USART_t *usart) {
  *  \param data     Pointer to a buffer to store the retrieved data.
  *  \param len      Size of the buffer in bytes.
  */
-void xspi_usart_send_packet(USART_t *usart, uint8_t *data, uint8_t len);
+static inline void xspi_usart_send_packet(USART_t *usart, uint8_t *data, uint8_t len) {
+    while (len--)
+    xspi_usart_send_byte(usart, *data++);
+}
 
 /*! \brief Retrieves a packet of data via UART in Master SPI mode.
  *  \param usart    Pointer to USART_t module structure.
  *  \param data     Pointer to a buffer to store the retrieved data.
  *  \param len      Size of the buffer in bytes.
  */
-void xspi_usart_get_packet(USART_t *usart, uint8_t *data, uint8_t len);
+static inline void xspi_usart_get_packet(USART_t *usart, uint8_t *data, uint8_t len) {
+    while (len--)
+    *data++ = xspi_usart_get_byte(usart);
+}
 
 #endif /* XSPI_H_ */

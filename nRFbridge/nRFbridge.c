@@ -29,11 +29,22 @@
 
 #define USART_TXMODE    PORTD.OUTSET = PIN1_bm
 #define USART_RXMODE    PORTD.OUTCLR = PIN1_bm
+
 #define STATUS_LED_ON   PORTA.OUTCLR = PIN0_bm
 #define STATUS_LED_OFF  PORTA.OUTSET = PIN0_bm
 #define STATUS_LED_TGL  PORTA.OUTTGL = PIN0_bm
 
-/* NRF24L01 configuration structure */
+/* XSPI configuration structure */
+xspi_config_t xspi_config = {
+    .spi = &SPIC,
+    .port = &PORTC,
+    .mosi_pin = 7,
+    .miso_pin = 6,
+    .sck_pin = 5,
+    .ss_pin = 4
+};
+
+/* XNRF24L01 configuration structure */
 xnrf_config_t xnrf_config = {
     .spi = &SPIC,
     .spi_port = &PORTC,
@@ -44,6 +55,13 @@ xnrf_config_t xnrf_config = {
     .addr_width = 5,
     .payload_width = 32,
     .confbits = NRF_CBITS
+};
+
+/* XUSART configuration structure */
+xusart_config_t xusart_config = {
+    .usart = &USARTD0,
+    .port = &PORTD,
+    .tx_pin = 3
 };
 
 uint64_t    addr_p0 = ADDR_P0;  /* default nRF address for TX and Pipe 0 RX */
@@ -68,31 +86,27 @@ void init() {
     RingBuffer_InitBuffer(&ringbuff);
         
     // Configure IO
-    PORTA.DIRSET = PIN0_bm;             /* Status LED */
-    PORTD.DIRSET = PIN1_bm | PIN3_bm;   /* USART Clock TX line (3) and direction control (1) */
+    PORTA.DIRSET = PIN0_bm;     /* Status LED */
+    PORTD.DIRSET = PIN1_bm;     /* USART direction control (1) */
     STATUS_LED_OFF;
     
     // Configure the nRF radio
-    xnrf_init(&xnrf_config);                                /* initialize the XNRF driver */
-    xnrf_set_channel(&xnrf_config, NRF_CHANNEL);            /* set our channel */
-    xnrf_set_datarate(&xnrf_config, NRF_RATE);              /* set our data rate */
-    xnrf_write_register(&xnrf_config, EN_AA, 0);            /* disable auto ack's */
-    xnrf_write_register(&xnrf_config, SETUP_RETR, 0);       /* disable auto retries */
-    xnrf_write_register(&xnrf_config, EN_RXADDR, 3);        /* listen on pipes 0 & 1 */
-    xnrf_set_tx_address(&xnrf_config, (uint8_t*)&addr_p0);  /* set TX address */
-    xnrf_set_rx0_address(&xnrf_config, (uint8_t*)&addr_p0); /* set Pipe 0 address */
-    xnrf_set_rx1_address(&xnrf_config, (uint8_t*)&addr_p1); /* set Pipe 1 address */
+    xnrf_init(&xnrf_config, &xspi_config);                  /* Initialize the XNRF driver */
+    xnrf_set_channel(&xnrf_config, NRF_CHANNEL);            /* Set our channel */
+    xnrf_set_datarate(&xnrf_config, NRF_RATE);              /* Set our data rate */
+    xnrf_write_register(&xnrf_config, EN_AA, 0);            /* Disable auto ack's */
+    xnrf_write_register(&xnrf_config, SETUP_RETR, 0);       /* Disable auto retries */
+    xnrf_write_register(&xnrf_config, EN_RXADDR, 3);        /* Listen on pipes 0 & 1 */
+    xnrf_set_tx_address(&xnrf_config, (uint8_t*)&addr_p0);  /* Set TX address */
+    xnrf_set_rx0_address(&xnrf_config, (uint8_t*)&addr_p0); /* Set Pipe 0 address */
+    xnrf_set_rx1_address(&xnrf_config, (uint8_t*)&addr_p1); /* Set Pipe 1 address */
 
-    // Clear nRF status and FIFOs in case we're coming out of a soft reset
-    xnrf_write_register(&xnrf_config, NRF_STATUS, ((1 << RX_DR) | (1 << TX_DS) | (1 << MAX_RT)));
-    xnrf_flush_rx(&xnrf_config);
-    xnrf_flush_tx(&xnrf_config);
-
-    // Configure the USART module    
-    xusart_set_format(&USARTD0, USART_CHSIZE_8BIT_gc, USART_PMODE_DISABLED_gc, false);  /* 8N1 on USARTD0 */
-    xusart_set_baudrate(&USARTD0, USART_BAUDRATE, F_CPU);                               /* set baud rate */
-    xusart_enable_tx(&USARTD0);                                                         /* Enable module TX */
-    xusart_enable_rx(&USARTD0);                                                         /* Enable module RX */
+    // Configure the USART module
+    xusart_init(&xusart_config);                                                                    /* Initialize the XUSART driver */
+    xusart_set_format(xusart_config.usart, USART_CHSIZE_8BIT_gc, USART_PMODE_DISABLED_gc, false);   /* 8N1 on USARTD0 */
+    xusart_set_baudrate(xusart_config.usart, USART_BAUDRATE, F_CPU);                                /* set baud rate */
+    xusart_enable_tx(xusart_config.usart);                                                          /* Enable module TX */
+    xusart_enable_rx(xusart_config.usart);                                                          /* Enable module RX */
     
     // Setup pin change interrupt handling for the nRF on PC3
     PORTC_PIN3CTRL = PORT_ISC_FALLING_gc;   /* Setup PC3 to sense falling edge */
@@ -100,7 +114,7 @@ void init() {
     PORTC.INTCTRL = PORT_INTLVL_LO_gc;      /* Set Port C for low level interrupts */
 
     // Setup USART RX interrupt handling    
-    USARTD0.CTRLA = ((USARTD0.CTRLA & ~USART_RXCINTLVL_gm) | USART_RXCINTLVL_LO_gc);
+    xusart_config.usart->CTRLA = ((xusart_config.usart->CTRLA & ~USART_RXCINTLVL_gm) | USART_RXCINTLVL_LO_gc);
     
     // Initialize listening on both RS485 line and nRF.  First in determines bridge direction
     xnrf_config_rx(&xnrf_config);   /* Configure nRF for RX mode */
@@ -116,20 +130,15 @@ void init() {
 
 /* Interrupt handler for nRF hardware interrupt on PC3 */
 ISR(PORTC_INT_vect) {
-    //TODO: Ring buffer is having some performance issues as RFPC protocol isn't FIFO friendly
-    //xnrf_read_payload_buffer(&xnrf_config, &ringbuff, xnrf_config.payload_width); /* retrieve the payload */
-    xnrf_read_payload(&xnrf_config, rxbuff, xnrf_config.payload_width);     /* retrieve the payload */
-    xnrf_write_register(&xnrf_config, NRF_STATUS, (1 << RX_DR));            /* reset the RX_DR status */    
-    
-    // Keep coming back until FIFO is empty. -- no until ring buffer is replaced.
-    //if((xnrf_read_register(&xnrf_config, FIFO_STATUS)) & (1 << RX_EMPTY))
-        PORTC.INTFLAGS = PIN3_bm;                                               /* Clear interrupt flag for PC3 */
-    DFLAG = true;
+    xnrf_read_payload(&xnrf_config, rxbuff, xnrf_config.payload_width);     /* Retrieve the payload */
+    xnrf_write_register(&xnrf_config, NRF_STATUS, (1 << RX_DR));            /* Reset the RX_DR status */    
+    PORTC.INTFLAGS = PIN3_bm;                                               /* Clear interrupt flag for PC3 */
+    DFLAG = true;                                                           /* Set out data ready flag */
  }
 
 /* Interrupt handler for USART RX on Port D - Every 1100 clock cycles @ 115,200? Polling instead? */
 ISR(USARTD0_RXC_vect) {
-    RingBuffer_Insert(&ringbuff, xusart_getchar(&USARTD0));   /* get the byte */
+    RingBuffer_Insert(&ringbuff, xusart_getchar(xusart_config.usart));   /* get the byte */
 }
 
 /* loop for one way nrf->rs485 bridge */
@@ -137,9 +146,9 @@ void nrf_to_rs485_loop() {
     USART_TXMODE;   /* Enable USART TX */
 
     while(1) {
-        while(!ringbuff.Count);                   /* Spin our wheels until we have data */
-        xusart_send_buffer(&USARTD0, &ringbuff);  /* Spit out the buffer */
-        PORTA.OUTTGL = PIN0_bm;                 /* Toggle status LED */
+        while(!ringbuff.Count);                         /* Spin our wheels until we have data */
+        xusart_send_buffer(xusart_config.usart, &ringbuff);  /* Spit out the buffer */
+        STATUS_LED_TGL;                                 /* Toggle status LED */
     }    
 }
 
@@ -162,7 +171,7 @@ void rs485_to_nrf_loop() {
         xnrf_enable(&xnrf_config);                              /* Pulse the nRF to start TX */
         _delay_us(15);                                          /* -for 10us per datahseet */
         xnrf_disable(&xnrf_config);                             /* End pulse */
-        PORTA.OUTTGL = PIN0_bm;                                 /* Toggle status LED */
+        STATUS_LED_TGL;                                         /* Toggle status LED */
     }
 }
 
@@ -256,28 +265,28 @@ void rfp_to_renard_loop() {
         DFLAG = false;  /* and reset out flag */
 
         STATUS_LED_ON;
-        if(rxbuff[30] == 0) {                       /* Check the offset byte to reset the Renard stream if needed */
-            xusart_putchar(&USARTD0, RENARD_SYNC);  /* Send the Renard SYNC byte */
-            xusart_putchar(&USARTD0, RENARD_ADDR);  /* and the Command / Address byte */
+        if(rxbuff[30] == 0) {                               /* Check the offset byte to reset the Renard stream if needed */
+            xusart_putchar(xusart_config.usart, RENARD_SYNC);    /* Send the Renard SYNC byte */
+            xusart_putchar(xusart_config.usart, RENARD_ADDR);    /* and the Command / Address byte */
         }
         
         /* Process and send channel data. Escape Renard special characters. */
         for (uint8_t i = 0; i < 30; i++) {
             switch (rxbuff[i]) {
                 case RENARD_PAD:
-                    xusart_putchar(&USARTD0, RENARD_ESCAPE);
-                    xusart_putchar(&USARTD0, RENARD_ESC_7D);
+                    xusart_putchar(xusart_config.usart, RENARD_ESCAPE);
+                    xusart_putchar(xusart_config.usart, RENARD_ESC_7D);
                     break;
                 case RENARD_SYNC:
-                    xusart_putchar(&USARTD0, RENARD_ESCAPE);
-                    xusart_putchar(&USARTD0, RENARD_ESC_7E);
+                    xusart_putchar(xusart_config.usart, RENARD_ESCAPE);
+                    xusart_putchar(xusart_config.usart, RENARD_ESC_7E);
                     break;
                 case RENARD_ESCAPE:
-                    xusart_putchar(&USARTD0, RENARD_ESCAPE);
-                    xusart_putchar(&USARTD0, RENARD_ESC_7F);
+                    xusart_putchar(xusart_config.usart, RENARD_ESCAPE);
+                    xusart_putchar(xusart_config.usart, RENARD_ESC_7F);
                     break;
                 default:
-                    xusart_putchar(&USARTD0, rxbuff[i]);
+                    xusart_putchar(xusart_config.usart, rxbuff[i]);
             }                    
         }
         STATUS_LED_OFF;            
@@ -296,7 +305,7 @@ void test_tx_loop() {
         xnrf_write_payload(&xnrf_config, alphatest, 32);    /* Load the packet */
         xnrf_pulse_tx(&xnrf_config);                        /* Send it off */
         
-        PORTA.OUTTGL = PIN0_bm;                             /* Toggle status LED */
+        STATUS_LED_TGL;                                     /* Toggle status LED */
         _delay_ms(1000);
     }
 }

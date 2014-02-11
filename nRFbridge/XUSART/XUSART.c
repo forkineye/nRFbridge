@@ -19,6 +19,10 @@
 
 #include "XUSART.h"
 
+void xusart_init(xusart_config_t *config) {
+    config->port->DIRSET = (1 << config->tx_pin);
+}    
+
 /* Borrowed from ASF - Thanks Atmel! */
 bool xusart_set_baudrate(USART_t *usart, uint32_t baud, uint32_t cpu_hz) {
 	int8_t exp;

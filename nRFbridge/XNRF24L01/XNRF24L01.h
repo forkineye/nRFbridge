@@ -33,20 +33,20 @@
 /*! \brief Structure which defines some items needed for nRF and SPI control.
  *  \param spi              Pointer to the SPI module this nRF is connected to.
  *  \param spi_port         Pointer to the port which the SPI module resides.
- *  \param ss_port          Pointer to the port containing the Slave Select pin.
- *  \param ss_pin           Slave Select pin number.
+ *  \param ss_port          Pointer to the port containing the Slave Select pin for this NRF.
+ *  \param ss_pin           Slave Select pin number for this NRF.
  *  \param ce_port          Pointer to the port containing the Chip Enable pin.
  *  \param ce_pin           Chip Enable pin number.
  *  \param addr_width       Address width to configure.  Valid values are 3-5.
  *  \param payload_width    Default payload width for all Pipes.  Valid values are 0-32.
- *  \param confbits         Configuration bits to be written to the CONFIG register.
+ *  \param confbits         Configuration bits to be written to the CONFIG register for initialization.
  */
 typedef struct {
-    SPI_t *spi;
-    PORT_t *spi_port;
-    PORT_t *ss_port;
+    SPI_t   *spi;
+    PORT_t  *spi_port;
+    PORT_t  *ss_port;
     uint8_t ss_pin;
-    PORT_t *ce_port;
+    PORT_t  *ce_port;
     uint8_t ce_pin;
     uint8_t addr_width;
     uint8_t payload_width;
@@ -381,8 +381,9 @@ static inline void xnrf_pulse_tx(xnrf_config_t *config) {
 
 /*! \brief Initializes XNRF by setting up SPI according to the config structure and settings initial radio parameters.
   *  \param config  Pointer to a xnrf_config_t structure.
+  *  \param config  Pointer to a xspi_config_t structure.
   */
-void xnrf_init(xnrf_config_t *config);
+void xnrf_init(xnrf_config_t *xnrf_config, xspi_config_t *xspi_config);
 
 /*! \brief Sets the air datarate.
  *  \param config   Pointer to a xnrf_config_t structure.

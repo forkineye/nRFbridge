@@ -18,28 +18,3 @@
  */ 
 
 #include "XSPI.h"
-
-void xspi_send_packet(SPI_t *spi, uint8_t *data, uint8_t len) {
-    while (len--) {
-        spi->DATA = *data++;
-        while(!(spi->STATUS & SPI_IF_bm));
-    }
-}
-
-void xspi_get_packet(SPI_t *spi, uint8_t *data, uint8_t len) {
-    while (len--) {
-        spi->DATA = 0xFF;
-        while(!(spi->STATUS & SPI_IF_bm));
-        *data++ = spi->DATA;
-    }
-}
-
-void xspi_usart_send_packet(USART_t *usart, uint8_t *data, uint8_t len) {
-    while (len--)
-        xspi_usart_send_byte(usart, *data++);
-}	
-
-void xspi_usart_get_packet(USART_t *usart, uint8_t *data, uint8_t len) {
-    while (len--)
-        *data++ = xspi_usart_get_byte(usart);
-}
