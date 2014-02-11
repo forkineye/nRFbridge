@@ -76,9 +76,9 @@
 		typedef struct
 		{
 			RingBuff_Data_t  Buffer[BUFFER_SIZE]; /**< Internal ring buffer data, referenced by the buffer pointers. */
-			RingBuff_Data_t* In; /**< Current storage location in the circular buffer */
-			RingBuff_Data_t* Out; /**< Current retrieval location in the circular buffer */
-			RingBuff_Count_t Count;
+			volatile RingBuff_Data_t* In; /**< Current storage location in the circular buffer */
+			volatile RingBuff_Data_t* Out; /**< Current retrieval location in the circular buffer */
+			volatile RingBuff_Count_t Count;
 		} RingBuff_t;
 	
 	/* Inline Functions: */

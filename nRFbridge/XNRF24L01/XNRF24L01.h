@@ -230,7 +230,7 @@ static inline void xnrf_write_register_buffer(xnrf_config_t *config, uint8_t reg
  *  \param data     Pointer to a buffer to hold our data.
  *  \param len      Length of the payload you're retrieving.
  */
-static inline void xnrf_read_payload(xnrf_config_t *config, uint8_t *data, uint8_t len) {
+static inline void xnrf_read_payload(xnrf_config_t *config, volatile uint8_t *data, uint8_t len) {
     xnrf_select(config);
     xspi_transfer_byte(config->spi, R_RX_PAYLOAD);
     while (len--)
@@ -368,7 +368,7 @@ static inline void xnrf_set_rx5_address(xnrf_config_t *config, uint8_t lsb) {
  */
 static inline void xnrf_pulse_tx(xnrf_config_t *config) {
     xnrf_enable(config);    /* Pulse the nRF to start TX */
-    _delay_us(11);          /* -for 10us per datasheet */
+    _delay_us(15);          /* -for 10us per datasheet */
     xnrf_disable(config);   /* End pulse */
 }
 
