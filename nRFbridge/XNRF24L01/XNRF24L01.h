@@ -160,33 +160,36 @@ static inline uint8_t xnrf_get_rx_width(xnrf_config_t *config) {
     return result;
 }
 
-/*! \brief Powers up the nRF in TX mode.
+/*! \brief Powers up the nRF.
  *  \param config   Pointer to a xnrf_config_t structure.
  */
-static inline void xnrf_powerup_tx (xnrf_config_t *config) {
-    config->confbits |= (1 << PWR_UP);
-    config->confbits &= ~(1 << PRIM_RX);
-    xnrf_disable(config);
-    _delay_us(5);   /* Datasheet section 6.1.7 - Tpece2csn */
-    xnrf_write_register(config, CONFIG, config->confbits);
-}
-
-/*! \brief Powers up the nRF in RX mode.
- *  \param config   Pointer to a xnrf_config_t structure.
- */
-static inline void xnrf_powerup_rx (xnrf_config_t *config) {
-    config->confbits |= ((1 << PWR_UP) | (1 << PRIM_RX));
-    xnrf_disable(config);
-    _delay_us(5);   /* Datasheet section 6.1.7 - Tpece2csn */
-    xnrf_write_register(config, CONFIG, config->confbits);
+static inline void xnrf_powerup (xnrf_config_t *config) {
+    xnrf_write_register(config, CONFIG, (xnrf_read_register(config, CONFIG)) | (1 << PWR_UP));
 }
 
 /*! \brief Powers down the nRF.
  *  \param config   Pointer to a xnrf_config_t structure.
  */
 static inline void xnrf_powerdown (xnrf_config_t *config) {
-    config->confbits &= ~(1 << PWR_UP);
-    xnrf_write_register(config, CONFIG, config->confbits);
+    xnrf_write_register(config, CONFIG, (xnrf_read_register(config, CONFIG)) & ~(1 << PWR_UP));
+}
+
+/*! \brief Configures up the nRF for TX mode.
+ *  \param config   Pointer to a xnrf_config_t structure.
+ */
+static inline void xnrf_config_tx (xnrf_config_t *config) {
+    xnrf_disable(config);
+    _delay_us(5);   /* Datasheet section 6.1.7 - Tpece2csn */
+    xnrf_write_register(config, CONFIG, (xnrf_read_register(config, CONFIG)) & ~(1 << PRIM_RX));
+}
+
+/*! \brief Configures the nRF for RX mode.
+ *  \param config   Pointer to a xnrf_config_t structure.
+ */
+static inline void xnrf_config_rx (xnrf_config_t *config) {
+    xnrf_disable(config);
+    _delay_us(5);   /* Datasheet section 6.1.7 - Tpece2csn */
+    xnrf_write_register(config, CONFIG, (xnrf_read_register(config, CONFIG)) | (1 << PRIM_RX));    
 }
 
 /*! \brief Sets the nRF channel.
