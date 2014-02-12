@@ -23,16 +23,19 @@
 //TODO: Change xnrf_init so it doesn't assume a 32MHz clock, or change xspi_master_init to reference baud rates.
 //TODO: Change this to xnrf_init_spi and add xnrf_init_usart??
 void xnrf_init(xnrf_config_t *xnrf_config, xspi_config_t *xspi_config) {
-    // Make sure our nRF is powered, disabled, and stabilized per the datasheet for power-on state transition.
-    xnrf_disable(xnrf_config);
-    _delay_ms(100);
-    
     // Initialize SPI to 4Mhz, assume a 32Mhz clock
     xnrf_config->ss_port->DIRSET = (1 << xnrf_config->ss_pin);
     xnrf_config->ce_port->DIRSET = (1 << xnrf_config->ce_pin);
     xspi_master_init(xspi_config, SPI_MODE_0_gc, false, SPI_PRESCALER_DIV16_gc, true);
+
+    // Make sure our nRF is powered, disabled, and stabilized per the datasheet for power-on state transition.
+    xnrf_disable(xnrf_config);
+    _delay_ms(100);
     
-    // configure address width
+    // Set default configuration
+    xnrf_write_register(xnrf_config, CONFIG, xnrf_config->confbits);
+    
+    // Configure address width
     xnrf_set_address_width(xnrf_config, xnrf_config->addr_width);
     
     //TODO: change this to only set default width when pipe is enabled? Does it matter?

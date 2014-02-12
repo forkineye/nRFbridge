@@ -164,14 +164,14 @@ static inline uint8_t xnrf_get_rx_width(xnrf_config_t *config) {
  *  \param config   Pointer to a xnrf_config_t structure.
  */
 static inline void xnrf_powerup (xnrf_config_t *config) {
-    xnrf_write_register(config, CONFIG, (xnrf_read_register(config, CONFIG)) | (1 << PWR_UP));
+    xnrf_write_register(config, CONFIG, xnrf_read_register(config, CONFIG) | (1 << PWR_UP));
 }
 
 /*! \brief Powers down the nRF.
  *  \param config   Pointer to a xnrf_config_t structure.
  */
 static inline void xnrf_powerdown (xnrf_config_t *config) {
-    xnrf_write_register(config, CONFIG, (xnrf_read_register(config, CONFIG)) & ~(1 << PWR_UP));
+    xnrf_write_register(config, CONFIG, xnrf_read_register(config, CONFIG) & ~(1 << PWR_UP));
 }
 
 /*! \brief Configures up the nRF for TX mode.
@@ -180,7 +180,7 @@ static inline void xnrf_powerdown (xnrf_config_t *config) {
 static inline void xnrf_config_tx (xnrf_config_t *config) {
     xnrf_disable(config);
     _delay_us(5);   /* Datasheet section 6.1.7 - Tpece2csn */
-    xnrf_write_register(config, CONFIG, (xnrf_read_register(config, CONFIG)) & ~(1 << PRIM_RX));
+    xnrf_write_register(config, CONFIG, xnrf_read_register(config, CONFIG) & ~(1 << PRIM_RX));
 }
 
 /*! \brief Configures the nRF for RX mode.
@@ -189,7 +189,7 @@ static inline void xnrf_config_tx (xnrf_config_t *config) {
 static inline void xnrf_config_rx (xnrf_config_t *config) {
     xnrf_disable(config);
     _delay_us(5);   /* Datasheet section 6.1.7 - Tpece2csn */
-    xnrf_write_register(config, CONFIG, (xnrf_read_register(config, CONFIG)) | (1 << PRIM_RX));    
+    xnrf_write_register(config, CONFIG, xnrf_read_register(config, CONFIG) | (1 << PRIM_RX));
 }
 
 /*! \brief Sets the nRF channel.
@@ -371,7 +371,7 @@ static inline void xnrf_set_rx5_address(xnrf_config_t *config, uint8_t lsb) {
  */
 static inline void xnrf_pulse_tx(xnrf_config_t *config) {
     xnrf_enable(config);    /* Pulse the nRF to start TX */
-    _delay_us(15);          /* -for 10us per datasheet */
+    _delay_us(11);          /* -for 10us per datasheet */
     xnrf_disable(config);   /* End pulse */
 }
 

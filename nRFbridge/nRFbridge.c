@@ -258,7 +258,8 @@ void renard_to_rfp_loop() {
 
 /* Loop for receiving RFPixelControl packets and sending as Renard RS485 data */
 void rfp_to_renard_loop() {
-    USART_TXMODE;       /* Enable USART TX */
+    USART_TXMODE;                   /* Enable USART TX */
+    //xnrf_config_rx(&xnrf_config);   /* Switch to nRF RX mode */
 
     while(1) {
         while(!DFLAG);  /* Spin our wheels until we have a packet */
