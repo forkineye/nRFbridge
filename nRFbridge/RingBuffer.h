@@ -1,24 +1,24 @@
 /*
              LUFA Library
-     Copyright (C) Dean Camera, 2010.
-              
+     Copyright (C) Dean Camera, 2014.
+
   dean [at] fourwalledcubicle [dot] com
-      www.fourwalledcubicle.com
+           www.lufa-lib.org
 */
 
 /*
-  Copyright 2010  Dean Camera (dean [at] fourwalledcubicle [dot] com)
+  Copyright 2014  Dean Camera (dean [at] fourwalledcubicle [dot] com)
 
-  Permission to use, copy, modify, distribute, and sell this 
+  Permission to use, copy, modify, distribute, and sell this
   software and its documentation for any purpose is hereby granted
-  without fee, provided that the above copyright notice appear in 
+  without fee, provided that the above copyright notice appear in
   all copies and that both that the copyright notice and this
-  permission notice and warranty disclaimer appear in supporting 
-  documentation, and that the name of the author not be used in 
-  advertising or publicity pertaining to distribution of the 
+  permission notice and warranty disclaimer appear in supporting
+  documentation, and that the name of the author not be used in
+  advertising or publicity pertaining to distribution of the
   software without specific, written prior permission.
 
-  The author disclaim all warranties with regard to this
+  The author disclaims all warranties with regard to this
   software, including all implied warranties of merchantability
   and fitness.  In no event shall the author be liable for any
   special, indirect or consequential damages or any damages
@@ -29,111 +29,295 @@
 */
 
 /** \file
+ *  \brief Lightweight ring (circular) buffer, for fast insertion/deletion of bytes.
  *
- *  Ultra lightweight ring buffer, for fast insertion/deletion. This uses inlined functions
- *  for maximum speed. All buffers created with this library must be of the same size, however
- *  multiple independant buffers can be created.
+ *  Lightweight ring buffer, for fast insertion/deletion. Multiple buffers can be created of
+ *  different sizes to suit different needs.
  *
  *  Note that for each buffer, insertion and removal operations may occur at the same time (via
- *  a multithreaded ISR based system) however the same kind of operation (two or more insertions
+ *  a multi-threaded ISR based system) however the same kind of operation (two or more insertions
  *  or deletions) must not overlap. If there is possibility of two or more of the same kind of
- *  operating occuring at the same point in time, atomic (mutex) locking should be used.
+ *  operating occurring at the same point in time, atomic (mutex) locking should be used.
  */
- 
-#ifndef _ULW_RING_BUFF_H_
-#define _ULW_RING_BUFF_H_
+
+/** \ingroup Group_MiscDrivers
+ *  \defgroup Group_RingBuff Generic Byte Ring Buffer - LUFA/Drivers/Misc/RingBuffer.h
+ *  \brief Lightweight ring buffer, for fast insertion/deletion of bytes.
+ *
+ *  \section Sec_RingBuff_Dependencies Module Source Dependencies
+ *  The following files must be built with any user project that uses this module:
+ *    - None
+ *
+ *  \section Sec_RingBuff_ModDescription Module Description
+ *  Lightweight ring buffer, for fast insertion/deletion. Multiple buffers can be created of
+ *  different sizes to suit different needs.
+ *
+ *  Note that for each buffer, insertion and removal operations may occur at the same time (via
+ *  a multi-threaded ISR based system) however the same kind of operation (two or more insertions
+ *  or deletions) must not overlap. If there is possibility of two or more of the same kind of
+ *  operating occurring at the same point in time, atomic (mutex) locking should be used.
+ *
+ *  \section Sec_RingBuff_ExampleUsage Example Usage
+ *  The following snippet is an example of how this module may be used within a typical
+ *  application.
+ *
+ *  \code
+ *      // Create the buffer structure and its underlying storage array
+ *      RingBuffer_t Buffer;
+ *      uint8_t      BufferData[128];
+ *
+ *      // Initialize the buffer with the created storage array
+ *      RingBuffer_InitBuffer(&Buffer, BufferData, sizeof(BufferData));
+ *
+ *      // Insert some data into the buffer
+ *      RingBuffer_Insert(&Buffer, 'H');
+ *      RingBuffer_Insert(&Buffer, 'E');
+ *      RingBuffer_Insert(&Buffer, 'L');
+ *      RingBuffer_Insert(&Buffer, 'L');
+ *      RingBuffer_Insert(&Buffer, 'O');
+ *
+ *      // Cache the number of stored bytes in the buffer
+ *      uint16_t BufferCount = RingBuffer_GetCount(&Buffer);
+ *
+ *      // Printer stored data length
+ *      printf("Buffer Length: %d, Buffer Data: \r\n", BufferCount);
+ *
+ *      // Print contents of the buffer one character at a time
+ *      while (BufferCount--)
+ *        putc(RingBuffer_Remove(&Buffer));
+ *  \endcode
+ *
+ *  @{
+ */
+
+#ifndef __RING_BUFFER_H__
+#define __RING_BUFFER_H__
 
 	/* Includes: */
-		#include <util/atomic.h>
-		#include <stdint.h>
-		#include <stdbool.h>
-        #include "config.h"
+    #include <avr/interrupt.h>
+    #include <stdbool.h>
+//		#include "../../Common/Common.h"
 
-	/* Defines: */
-		/** Size of each ring buffer, in data elements - must be between 1 and 255. */
-        #ifndef BUFFER_SIZE
-		#   define BUFFER_SIZE            255
-        #endif		
-        
-		/** Type of data to store into the buffer. */
-        #ifndef RingBuff_Data_t
-		#   define RingBuff_Data_t        uint8_t
+    /** Forces the compiler to inline the specified function. When applied, the given function will be
+    *  in-lined under all circumstances.
+    */
+    #define ATTR_ALWAYS_INLINE           __attribute__ ((always_inline))
+
+    /** Indicates that the specified parameters of the function are pointers which should never be \c NULL.
+    *  When applied as a 1-based comma separated list the compiler will emit a warning if the specified
+    *  parameters are known at compiler time to be \c NULL at the point of calling the function.
+    */
+    #define ATTR_NON_NULL_PTR_ARG(...)   __attribute__ ((nonnull (__VA_ARGS__)))
+
+    /** Indicates that the function returns a value which should not be ignored by the user code. When
+    *  applied, any ignored return value from calling the function will produce a compiler warning.
+    */
+    #define ATTR_WARN_UNUSED_RESULT      __attribute__ ((warn_unused_result))
+
+    /** Forces GCC to use pointer indirection (via the device's pointer register pairs) when accessing the given
+    *  struct pointer. In some cases GCC will emit non-optimal assembly code when accessing a structure through
+    *  a pointer, resulting in a larger binary. When this macro is used on a (non \c const) structure pointer before
+    *  use, it will force GCC to use pointer indirection on the elements rather than direct store and load
+    *  instructions.
+    *
+    *  \param[in, out] StructPtr  Pointer to a structure which is to be forced into indirect access mode.
+    */
+    #define GCC_FORCE_POINTER_ACCESS(StructPtr)   __asm__ __volatile__("" : "=b" (StructPtr) : "0" (StructPtr))
+
+    /** Forces GCC to create a memory barrier, ensuring that memory accesses are not reordered past the barrier point.
+    *  This can be used before ordering-critical operations, to ensure that the compiler does not re-order the resulting
+    *  assembly output in an unexpected manner on sections of code that are ordering-specific.
+    */
+    #define GCC_MEMORY_BARRIER()                  __asm__ __volatile__("" ::: "memory");
+
+    typedef uint8_t uint_reg_t;
+	
+    /** Retrieves a mask which contains the current state of the global interrupts for the device. This
+    *  value can be stored before altering the global interrupt enable state, before restoring the
+    *  flag(s) back to their previous values after a critical section using \ref SetGlobalInterruptMask().
+    *
+    *  \ingroup Group_GlobalInt
+    *
+    *  \return  Mask containing the current Global Interrupt Enable Mask bit(s).
+    */
+    static inline uint_reg_t GetGlobalInterruptMask(void) ATTR_ALWAYS_INLINE ATTR_WARN_UNUSED_RESULT;
+    static inline uint_reg_t GetGlobalInterruptMask(void)
+    {
+    GCC_MEMORY_BARRIER();
+
+    #if (ARCH == ARCH_AVR8)
+    return SREG;
+    #elif (ARCH == ARCH_UC3)
+    return __builtin_mfsr(AVR32_SR);
+    #elif (ARCH == ARCH_XMEGA)
+    return SREG;
+    #endif
+    }
+
+    /** Sets the global interrupt enable state of the microcontroller to the mask passed into the function.
+    *  This can be combined with \ref GetGlobalInterruptMask() to save and restore the Global Interrupt Enable
+    *  Mask bit(s) of the device after a critical section has completed.
+    *
+    *  \ingroup Group_GlobalInt
+    *
+    *  \param[in] GlobalIntState  Global Interrupt Enable Mask value to use
+    */
+    static inline void SetGlobalInterruptMask(const uint_reg_t GlobalIntState) ATTR_ALWAYS_INLINE;
+    static inline void SetGlobalInterruptMask(const uint_reg_t GlobalIntState)
+    {
+        GCC_MEMORY_BARRIER();
+
+        #if (ARCH == ARCH_AVR8)
+            SREG = GlobalIntState;
+        #elif (ARCH == ARCH_UC3)
+            if (GlobalIntState & AVR32_SR_GM)
+               __builtin_ssrf(AVR32_SR_GM_OFFSET);
+            else
+                __builtin_csrf(AVR32_SR_GM_OFFSET);
+        #elif (ARCH == ARCH_XMEGA)
+            SREG = GlobalIntState;
         #endif
 
-		/** Datatype which may be used to store the count of data stored in a buffer, retrieved
-		 *  via a call to \ref RingBuffer_GetCount().
-		 */
-		#if (BUFFER_SIZE <= 0xFF)
-			#define RingBuff_Count_t   uint8_t
-		#else
-			#define RingBuff_Count_t   uint16_t
+        GCC_MEMORY_BARRIER();
+    }
+
+    /** Enables global interrupt handling for the device, allowing interrupts to be handled.
+    *
+    *  \ingroup Group_GlobalInt
+    */
+    static inline void GlobalInterruptEnable(void) ATTR_ALWAYS_INLINE;
+    static inline void GlobalInterruptEnable(void)
+    {
+        GCC_MEMORY_BARRIER();
+
+        #if (ARCH == ARCH_AVR8)
+            sei();
+        #elif (ARCH == ARCH_UC3)
+            __builtin_csrf(AVR32_SR_GM_OFFSET);
+        #elif (ARCH == ARCH_XMEGA)
+            sei();
+        #endif
+
+        GCC_MEMORY_BARRIER();
+    }
+
+    /** Disabled global interrupt handling for the device, preventing interrupts from being handled.
+    *
+    *  \ingroup Group_GlobalInt
+    */
+    static inline void GlobalInterruptDisable(void) ATTR_ALWAYS_INLINE;
+    static inline void GlobalInterruptDisable(void)
+    {
+        GCC_MEMORY_BARRIER();
+
+        #if (ARCH == ARCH_AVR8)
+            cli();
+        #elif (ARCH == ARCH_UC3)
+            __builtin_ssrf(AVR32_SR_GM_OFFSET);
+        #elif (ARCH == ARCH_XMEGA)
+            cli();
+        #endif
+
+        GCC_MEMORY_BARRIER();
+    }
+
+
+    /* Enable C linkage for C++ Compilers: */
+		#if defined(__cplusplus)
+			extern "C" {
 		#endif
 
 	/* Type Defines: */
-		/** Type define for a new ring buffer object. Buffers should be initialized via a call to
+		/** \brief Ring Buffer Management Structure.
+		 *
+		 *  Type define for a new ring buffer object. Buffers should be initialized via a call to
 		 *  \ref RingBuffer_InitBuffer() before use.
 		 */
 		typedef struct
 		{
-			RingBuff_Data_t  Buffer[BUFFER_SIZE]; /**< Internal ring buffer data, referenced by the buffer pointers. */
-			volatile RingBuff_Data_t* In; /**< Current storage location in the circular buffer */
-			volatile RingBuff_Data_t* Out; /**< Current retrieval location in the circular buffer */
-			volatile RingBuff_Count_t Count;
-		} RingBuff_t;
-	
+			uint8_t* In; /**< Current storage location in the circular buffer. */
+			uint8_t* Out; /**< Current retrieval location in the circular buffer. */
+			uint8_t* Start; /**< Pointer to the start of the buffer's underlying storage array. */
+			uint8_t* End; /**< Pointer to the end of the buffer's underlying storage array. */
+			uint16_t Size; /**< Size of the buffer's underlying storage array. */
+			uint16_t Count; /**< Number of bytes currently stored in the buffer. */
+		} RingBuffer_t;
+
 	/* Inline Functions: */
 		/** Initializes a ring buffer ready for use. Buffers must be initialized via this function
 		 *  before any operations are called upon them. Already initialized buffers may be reset
 		 *  by re-initializing them using this function.
 		 *
-		 *  \param[out] Buffer  Pointer to a ring buffer structure to initialize
+		 *  \param[out] Buffer   Pointer to a ring buffer structure to initialize.
+		 *  \param[out] DataPtr  Pointer to a global array that will hold the data stored into the ring buffer.
+		 *  \param[out] Size     Maximum number of bytes that can be stored in the underlying data array.
 		 */
-		static inline void RingBuffer_InitBuffer(RingBuff_t* const Buffer)
+		static inline void RingBuffer_InitBuffer(RingBuffer_t* Buffer,
+		                                         uint8_t* const DataPtr,
+		                                         const uint16_t Size) ATTR_NON_NULL_PTR_ARG(1) ATTR_NON_NULL_PTR_ARG(2);
+		static inline void RingBuffer_InitBuffer(RingBuffer_t* Buffer,
+		                                         uint8_t* const DataPtr,
+		                                         const uint16_t Size)
 		{
-			ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-			{
-				Buffer->In    = Buffer->Buffer;
-				Buffer->Out   = Buffer->Buffer;
-				Buffer->Count = 0;
-			}
+			GCC_FORCE_POINTER_ACCESS(Buffer);
+
+			uint_reg_t CurrentGlobalInt = GetGlobalInterruptMask();
+			GlobalInterruptDisable();
+
+			Buffer->In     = DataPtr;
+			Buffer->Out    = DataPtr;
+			Buffer->Start  = &DataPtr[0];
+			Buffer->End    = &DataPtr[Size];
+			Buffer->Size   = Size;
+			Buffer->Count  = 0;
+
+			SetGlobalInterruptMask(CurrentGlobalInt);
 		}
-		
-		/** Retrieves the minimum number of bytes stored in a particular buffer. This value is computed
-		 *  by entering an atomic lock on the buffer while the IN and OUT locations are fetched, so that
-		 *  the buffer cannot be modified while the computation takes place. This value should be cached
-		 *  when reading out the contents of the buffer, so that as small a time as possible is spent
-		 *  in an atomic lock.
+
+		/** Retrieves the current number of bytes stored in a particular buffer. This value is computed
+		 *  by entering an atomic lock on the buffer, so that the buffer cannot be modified while the
+		 *  computation takes place. This value should be cached when reading out the contents of the buffer,
+		 *  so that as small a time as possible is spent in an atomic lock.
 		 *
 		 *  \note The value returned by this function is guaranteed to only be the minimum number of bytes
-		 *        stored in the given buffer; this value may change as other threads write new data and so
+		 *        stored in the given buffer; this value may change as other threads write new data, thus
 		 *        the returned number should be used only to determine how many successive reads may safely
 		 *        be performed on the buffer.
 		 *
-		 *  \param[in] Buffer  Pointer to a ring buffer structure whose count is to be computed
+		 *  \param[in] Buffer  Pointer to a ring buffer structure whose count is to be computed.
+		 *
+		 *  \return Number of bytes currently stored in the buffer.
 		 */
-		static inline RingBuff_Count_t RingBuffer_GetCount(RingBuff_t* const Buffer)
+		static inline uint16_t RingBuffer_GetCount(RingBuffer_t* const Buffer) ATTR_WARN_UNUSED_RESULT ATTR_NON_NULL_PTR_ARG(1);
+		static inline uint16_t RingBuffer_GetCount(RingBuffer_t* const Buffer)
 		{
-			RingBuff_Count_t Count;
-			
-			ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-			{
-				Count = Buffer->Count;
-			}
-			
+			uint16_t Count;
+
+			uint_reg_t CurrentGlobalInt = GetGlobalInterruptMask();
+			GlobalInterruptDisable();
+
+			Count = Buffer->Count;
+
+			SetGlobalInterruptMask(CurrentGlobalInt);
 			return Count;
 		}
-		
-		/** Atomically determines if the specified ring buffer contains any free space. This should
-		 *  be tested before storing data to the buffer, to ensure that no data is lost due to a
-		 *  buffer overrun.
+
+		/** Retrieves the free space in a particular buffer. This value is computed by entering an atomic lock
+		 *  on the buffer, so that the buffer cannot be modified while the computation takes place.
 		 *
-		 *  \param[in,out] Buffer  Pointer to a ring buffer structure to insert into
+		 *  \note The value returned by this function is guaranteed to only be the maximum number of bytes
+		 *        free in the given buffer; this value may change as other threads write new data, thus
+		 *        the returned number should be used only to determine how many successive writes may safely
+		 *        be performed on the buffer when there is a single writer thread.
 		 *
-		 *  \return Boolean true if the buffer contains no free space, false otherwise
-		 */		 
-		static inline bool RingBuffer_IsFull(RingBuff_t* const Buffer)
+		 *  \param[in] Buffer  Pointer to a ring buffer structure whose free count is to be computed.
+		 *
+		 *  \return Number of free bytes in the buffer.
+		 */
+		static inline uint16_t RingBuffer_GetFreeCount(RingBuffer_t* const Buffer) ATTR_WARN_UNUSED_RESULT ATTR_NON_NULL_PTR_ARG(1);
+		static inline uint16_t RingBuffer_GetFreeCount(RingBuffer_t* const Buffer)
 		{
-			return (RingBuffer_GetCount(Buffer) == BUFFER_SIZE);
+			return (Buffer->Size - RingBuffer_GetCount(Buffer));
 		}
 
 		/** Atomically determines if the specified ring buffer contains any data. This should
@@ -144,61 +328,107 @@
 		 *  buffer (via a call to the \ref RingBuffer_GetCount() function) in a temporary variable
 		 *  to reduce the time spent in atomicity locks.
 		 *
-		 *  \param[in,out] Buffer  Pointer to a ring buffer structure to insert into
+		 *  \param[in,out] Buffer  Pointer to a ring buffer structure to insert into.
 		 *
-		 *  \return Boolean true if the buffer contains no free space, false otherwise
-		 */		 
-		static inline bool RingBuffer_IsEmpty(RingBuff_t* const Buffer)
+		 *  \return Boolean \c true if the buffer contains no free space, \c false otherwise.
+		 */
+		static inline bool RingBuffer_IsEmpty(RingBuffer_t* const Buffer) ATTR_WARN_UNUSED_RESULT ATTR_NON_NULL_PTR_ARG(1);
+		static inline bool RingBuffer_IsEmpty(RingBuffer_t* const Buffer)
 		{
 			return (RingBuffer_GetCount(Buffer) == 0);
 		}
 
+		/** Atomically determines if the specified ring buffer contains any free space. This should
+		 *  be tested before storing data to the buffer, to ensure that no data is lost due to a
+		 *  buffer overrun.
+		 *
+		 *  \param[in,out] Buffer  Pointer to a ring buffer structure to insert into.
+		 *
+		 *  \return Boolean \c true if the buffer contains no free space, \c false otherwise.
+		 */
+		static inline bool RingBuffer_IsFull(RingBuffer_t* const Buffer) ATTR_WARN_UNUSED_RESULT ATTR_NON_NULL_PTR_ARG(1);
+		static inline bool RingBuffer_IsFull(RingBuffer_t* const Buffer)
+		{
+			return (RingBuffer_GetCount(Buffer) == Buffer->Size);
+		}
+
 		/** Inserts an element into the ring buffer.
 		 *
-		 *  \note Only one execution thread (main program thread or an ISR) may insert into a single buffer
-		 *        otherwise data corruption may occur. Insertion and removal may occur from different execution
-		 *        threads.
+		 *  \warning Only one execution thread (main program thread or an ISR) may insert into a single buffer
+		 *           otherwise data corruption may occur. Insertion and removal may occur from different execution
+		 *           threads.
 		 *
-		 *  \param[in,out] Buffer  Pointer to a ring buffer structure to insert into
-		 *  \param[in]     Data    Data element to insert into the buffer
+		 *  \param[in,out] Buffer  Pointer to a ring buffer structure to insert into.
+		 *  \param[in]     Data    Data element to insert into the buffer.
 		 */
-		static inline void RingBuffer_Insert(RingBuff_t* const Buffer,
-		                                     const RingBuff_Data_t Data)
+		static inline void RingBuffer_Insert(RingBuffer_t* Buffer,
+		                                     const uint8_t Data) ATTR_NON_NULL_PTR_ARG(1);
+		static inline void RingBuffer_Insert(RingBuffer_t* Buffer,
+		                                     const uint8_t Data)
 		{
-			*Buffer->In = Data;
-			
-			if (++Buffer->In == &Buffer->Buffer[BUFFER_SIZE])
-			  Buffer->In = Buffer->Buffer;
+			GCC_FORCE_POINTER_ACCESS(Buffer);
 
-			ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-			{
-				Buffer->Count++;
-			}
+			*Buffer->In = Data;
+
+			if (++Buffer->In == Buffer->End)
+			  Buffer->In = Buffer->Start;
+
+			uint_reg_t CurrentGlobalInt = GetGlobalInterruptMask();
+			GlobalInterruptDisable();
+
+			Buffer->Count++;
+
+			SetGlobalInterruptMask(CurrentGlobalInt);
 		}
 
 		/** Removes an element from the ring buffer.
 		 *
-		 *  \note Only one execution thread (main program thread or an ISR) may remove from a single buffer
-		 *        otherwise data corruption may occur. Insertion and removal may occur from different execution
-		 *        threads.
+		 *  \warning Only one execution thread (main program thread or an ISR) may remove from a single buffer
+		 *           otherwise data corruption may occur. Insertion and removal may occur from different execution
+		 *           threads.
 		 *
-		 *  \param[in,out] Buffer  Pointer to a ring buffer structure to retrieve from
+		 *  \param[in,out] Buffer  Pointer to a ring buffer structure to retrieve from.
 		 *
-		 *  \return Next data element stored in the buffer
+		 *  \return Next data element stored in the buffer.
 		 */
-		static inline RingBuff_Data_t RingBuffer_Remove(RingBuff_t* const Buffer)
+		static inline uint8_t RingBuffer_Remove(RingBuffer_t* Buffer) ATTR_NON_NULL_PTR_ARG(1);
+		static inline uint8_t RingBuffer_Remove(RingBuffer_t* Buffer)
 		{
-			RingBuff_Data_t Data = *Buffer->Out;
-			
-			if (++Buffer->Out == &Buffer->Buffer[BUFFER_SIZE])
-			  Buffer->Out = Buffer->Buffer;
+			GCC_FORCE_POINTER_ACCESS(Buffer);
 
-			ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-			{
-				Buffer->Count--;
-			}
-			
+			uint8_t Data = *Buffer->Out;
+
+			if (++Buffer->Out == Buffer->End)
+			  Buffer->Out = Buffer->Start;
+
+			uint_reg_t CurrentGlobalInt = GetGlobalInterruptMask();
+			GlobalInterruptDisable();
+
+			Buffer->Count--;
+
+			SetGlobalInterruptMask(CurrentGlobalInt);
+
 			return Data;
 		}
 
+		/** Returns the next element stored in the ring buffer, without removing it.
+		 *
+		 *  \param[in,out] Buffer  Pointer to a ring buffer structure to retrieve from.
+		 *
+		 *  \return Next data element stored in the buffer.
+		 */
+		static inline uint8_t RingBuffer_Peek(RingBuffer_t* const Buffer) ATTR_WARN_UNUSED_RESULT ATTR_NON_NULL_PTR_ARG(1);
+		static inline uint8_t RingBuffer_Peek(RingBuffer_t* const Buffer)
+		{
+			return *Buffer->Out;
+		}
+
+	/* Disable C linkage for C++ Compilers: */
+		#if defined(__cplusplus)
+			}
+		#endif
+
 #endif
+
+/** @} */
+

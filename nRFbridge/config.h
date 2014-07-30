@@ -46,4 +46,8 @@
 /* RingBuffer Config */
 #define BUFFER_SIZE     255
 
+/* RFShowControl Protocol */
+#define RFSC_FRAME  30  /* Offset for FRAME byte in RFSC Protocol */
+#define RFSC_CMD    31  /* Offset for COMMAND byte - proposed */
+
 #endif /* CONFIG_H_ */

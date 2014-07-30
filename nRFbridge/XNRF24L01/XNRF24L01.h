@@ -246,7 +246,7 @@ static inline void xnrf_read_payload(xnrf_config_t *config, volatile uint8_t *da
  *  \param buffer   Pointer to a RingBuffer structure to hold our data.
  *  \param len      Length of the payload you're retrieving.
  */
-static inline void xnrf_read_payload_buffer(xnrf_config_t *config, RingBuff_t *buffer, uint8_t len) {
+static inline void xnrf_read_payload_buffer(xnrf_config_t *config, RingBuffer_t *buffer, uint8_t len) {
     xnrf_select(config);
     xspi_transfer_byte(config->spi, R_RX_PAYLOAD);
     while (len--)
@@ -272,7 +272,7 @@ static inline void xnrf_write_payload(xnrf_config_t *config, uint8_t *data, uint
  *  \param buffer   Pointer to a RingBuffer structure that holds our data.
  *  \param len      Size of the payload we are sending.
  */
-static inline void xnrf_write_payload_buffer(xnrf_config_t *config, RingBuff_t *buffer, uint8_t len) {
+static inline void xnrf_write_payload_buffer(xnrf_config_t *config, RingBuffer_t *buffer, uint8_t len) {
     xnrf_select(config);
     xspi_transfer_byte(config->spi, W_TX_PAYLOAD);
     while (len--)
@@ -300,7 +300,7 @@ static inline void xnrf_write_payload_noack(xnrf_config_t *config, uint8_t *data
  *  \param buffer   Pointer to a RingBuffer structure that holds our data.
  *  \param len      Size of the payload we are sending.
  */
-static inline void xnrf_write_payload_buffer_noack(xnrf_config_t *config, RingBuff_t *buffer, uint8_t len) {
+static inline void xnrf_write_payload_buffer_noack(xnrf_config_t *config, RingBuffer_t *buffer, uint8_t len) {
     xnrf_select(config);
     xspi_transfer_byte(config->spi, W_TX_PAYLOAD_NOACK);
     while (len--)

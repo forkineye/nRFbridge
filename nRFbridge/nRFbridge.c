@@ -64,9 +64,11 @@ xusart_config_t xusart_config = {
     .tx_pin = 3
 };
 
-uint64_t    addr_p0 = ADDR_P0;  /* default nRF address for TX and Pipe 0 RX */
-uint64_t    addr_p1 = ADDR_P1;  /* default nRF address for Pipe 1 RX */    
-RingBuff_t  ringbuff;           /* Ring buffer to hold our data */
+uint64_t        addr_p0 = ADDR_P0;      /* default nRF address for TX and Pipe 0 RX */
+uint64_t        addr_p1 = ADDR_P1;      /* default nRF address for Pipe 1 RX */    
+RingBuffer_t    ringbuff;               /* Ring Buffer to hold our data */
+uint8_t         rb_data[BUFFER_SIZE];
+
 volatile uint8_t rxbuff[32];    /* Packet buffer */
 volatile bool DFLAG = false;
 
@@ -83,7 +85,7 @@ void init() {
     OSC.CTRL &= ~OSC_RC2MEN_bm;                     /* Disable 2Mhz oscillator */
 
     // Initialize ring buffer
-    RingBuffer_InitBuffer(&ringbuff);
+    RingBuffer_InitBuffer(&ringbuff, rb_data, BUFFER_SIZE);
         
     // Configure IO
     PORTA.DIRSET = PIN0_bm;     /* Status LED */
@@ -139,6 +141,7 @@ ISR(PORTC_INT_vect) {
 /* Interrupt handler for USART RX on Port D - Every 1100 clock cycles @ 115,200? Polling instead? */
 ISR(USARTD0_RXC_vect) {
     RingBuffer_Insert(&ringbuff, xusart_getchar(xusart_config.usart));   /* get the byte */
+    DFLAG = true;
 }
 
 /* loop for one way nrf->rs485 bridge */
@@ -197,7 +200,7 @@ void renard_to_rfp_loop() {
 
     while(1) {
         /* We have a full load? Send it off! */
-        if (index == 29) {
+        if (index == RFSC_FRAME) {
             packet[index++] = offset++;                     /* Byte 31 defines offset */
             packet[index] = 0x00;                           /* Byte 32 is reserved */
             xnrf_write_payload(&xnrf_config, packet, 32);   /* Load the packet */
@@ -205,7 +208,8 @@ void renard_to_rfp_loop() {
             index = 0;                                      /* Reset our index */
         }
         
-        while(!ringbuff.Count);               /* Spin our wheels until the buffer has data */
+        while(!DFLAG);               /* Spin our wheels until the buffer has data */
+        DFLAG=false;
         STATUS_LED_ON;
         data = RingBuffer_Remove(&ringbuff);  /* Grab a byte off the buffer */
 
@@ -216,8 +220,8 @@ void renard_to_rfp_loop() {
             case RENARD_SYNC:               /* Set our state to SYNC and process current packet if needed */
                 state = RENSTATE_SYNC;
                 if(index) {
-                    memset(&packet[index], 0x00, 29 - index);   /* Null out rest of packet. PADs will get translated or would use them */
-                    index = 29;                                 /* Set our index to trigger a TX */
+                    memset(&packet[index], 0x00, RFSC_FRAME - index);   /* Null out rest of packet. PADs will get translated or would use them */
+                    index = RFSC_FRAME;                                 /* Set our index to trigger a TX */
                 }                    
                 continue;
             case RENARD_ESCAPE:             /* Set our state to ESCAPE and wait for next byte */
@@ -319,7 +323,7 @@ int main(void) {
     //nrf_to_rs485_loop();
     //rs485_to_nrf_loop();
     //bidirectional_loop();
-    //renard_to_rfp_loop();
-    rfp_to_renard_loop();
+    renard_to_rfp_loop();
+    //rfp_to_renard_loop();
     //test_tx_loop();
 }

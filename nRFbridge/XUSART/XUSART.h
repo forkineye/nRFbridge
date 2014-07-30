@@ -135,7 +135,7 @@ static inline void xusart_get_packet(USART_t *usart, uint8_t *data, uint8_t len)
  *  \param usart    Pointer to USART_t module structure.
  *  \param buffer   Pointer to a RingBuffer structure that contains our data.
   */
-static inline void xusart_send_buffer(USART_t *usart, RingBuff_t *buffer) {
+static inline void xusart_send_buffer(USART_t *usart, RingBuffer_t *buffer) {
     uint8_t len = RingBuffer_GetCount(buffer);
     while (len--)
         xusart_putchar(usart, RingBuffer_Remove(buffer));
@@ -146,7 +146,7 @@ static inline void xusart_send_buffer(USART_t *usart, RingBuff_t *buffer) {
  *  \param buffer   Pointer to a RingBuffer structure to hold our data.
  *  \param len      Size of the buffer in bytes.
  */
-static inline void xusart_get_buffer(USART_t *usart, RingBuff_t *buffer, uint8_t len) {
+static inline void xusart_get_buffer(USART_t *usart, RingBuffer_t *buffer, uint8_t len) {
     while (len--)
         RingBuffer_Insert(buffer, xusart_getchar(usart));
 }
