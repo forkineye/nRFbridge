@@ -1,3 +1,7 @@
+/**********************************************************************/
+/*      Taken from LUFA 140302 with dependencies manually added       */
+/**********************************************************************/
+
 /*
              LUFA Library
      Copyright (C) Dean Camera, 2014.
@@ -96,7 +100,9 @@
 	/* Includes: */
     #include <avr/interrupt.h>
     #include <stdbool.h>
-//		#include "../../Common/Common.h"
+
+    /* xmega - 8bit registers */
+    typedef uint8_t uint_reg_t;
 
     /** Forces the compiler to inline the specified function. When applied, the given function will be
     *  in-lined under all circumstances.
@@ -130,8 +136,6 @@
     */
     #define GCC_MEMORY_BARRIER()                  __asm__ __volatile__("" ::: "memory");
 
-    typedef uint8_t uint_reg_t;
-	
     /** Retrieves a mask which contains the current state of the global interrupts for the device. This
     *  value can be stored before altering the global interrupt enable state, before restoring the
     *  flag(s) back to their previous values after a critical section using \ref SetGlobalInterruptMask().

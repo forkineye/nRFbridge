@@ -89,13 +89,23 @@ void init() {
         
     // Configure IO
     PORTA.DIRSET = PIN0_bm;     /* Status LED */
-    PORTD.DIRSET = PIN1_bm;     /* USART direction control (1) */
+    PORTD.DIRSET = PIN1_bm;     /* USART direction control */
     STATUS_LED_OFF;
     
+    //TODO: Load configuration from EEPROM here. For now, use defaults from config.h
+    uint8_t         nrf_channel = NRF_CHANNEL;
+    uint8_t         nrf_rate = NRF_RATE;
+    uint32_t        rs485_baudrate = RS485_BAUDRATE;
+    bridge_mode_t   mode = MODE_CONFIG;
+
+    //TODO: Add configuration jumper check here to override mode
+    mode = MODE_RENARD;
+
+    //TODO:  Add support for different RF protocols and switch on config like USART below
     // Configure the nRF radio
     xnrf_init(&xnrf_config, &xspi_config);                  /* Initialize the XNRF driver */
-    xnrf_set_channel(&xnrf_config, NRF_CHANNEL);            /* Set our channel */
-    xnrf_set_datarate(&xnrf_config, NRF_RATE);              /* Set our data rate */
+    xnrf_set_channel(&xnrf_config, nrf_channel);            /* Set our channel */
+    xnrf_set_datarate(&xnrf_config, nrf_rate);              /* Set our data rate */
     xnrf_write_register(&xnrf_config, EN_AA, 0);            /* Disable auto ack's */
     xnrf_write_register(&xnrf_config, SETUP_RETR, 0);       /* Disable auto retries */
     xnrf_write_register(&xnrf_config, EN_RXADDR, 3);        /* Listen on pipes 0 & 1 */
@@ -103,59 +113,105 @@ void init() {
     xnrf_set_rx0_address(&xnrf_config, (uint8_t*)&addr_p0); /* Set Pipe 0 address */
     xnrf_set_rx1_address(&xnrf_config, (uint8_t*)&addr_p1); /* Set Pipe 1 address */
 
-    // Configure the USART module
-    xusart_init(&xusart_config);                                                                    /* Initialize the XUSART driver */
-    xusart_set_format(xusart_config.usart, USART_CHSIZE_8BIT_gc, USART_PMODE_DISABLED_gc, false);   /* 8N1 on USARTD0 */
-    xusart_set_baudrate(xusart_config.usart, USART_BAUDRATE, F_CPU);                                /* set baud rate */
-    xusart_enable_tx(xusart_config.usart);                                                          /* Enable module TX */
-    xusart_enable_rx(xusart_config.usart);                                                          /* Enable module RX */
-    
-    // Setup pin change interrupt handling for the nRF on PC3
+    // Configure the USART module based on mode
+    xusart_init(&xusart_config);                                                /* Initialize the XUSART driver */
+    switch(mode) {
+        case MODE_CONFIG:
+            xusart_set_format(xusart_config.usart, USART_CHSIZE_8BIT_gc,
+                    USART_PMODE_DISABLED_gc, false);                            /* 8N1 on USARTD0 */
+            xusart_set_baudrate(xusart_config.usart, CONFIG_BAUDRATE, F_CPU);   /* set config baud rate */
+            break;
+        case MODE_RS485:
+        case MODE_RENARD:
+            xusart_set_format(xusart_config.usart, USART_CHSIZE_8BIT_gc,
+                    USART_PMODE_DISABLED_gc, false);                            /* 8N1 on USARTD0 */
+            xusart_set_baudrate(xusart_config.usart, rs485_baudrate, F_CPU);    /* set RS485 / Renard baud rate */
+            break;
+        case MODE_DMX:
+            xusart_set_format(xusart_config.usart, USART_CHSIZE_8BIT_gc,
+                    USART_PMODE_DISABLED_gc, true);                             /* 8N2 on USARTD0 */
+            xusart_set_baudrate(xusart_config.usart, DMX_BAUDRATE, F_CPU);      /* set DMX baud rate */
+            break;
+    }
+    xusart_enable_tx(xusart_config.usart);                                      /* Enable USART TX */
+    xusart_enable_rx(xusart_config.usart);                                      /* Enable USART RX */
+
+    // Setup interrupts for USART and nRF
+    xusart_config.usart->CTRLA =
+            ((xusart_config.usart->CTRLA & ~USART_RXCINTLVL_gm)
+            | USART_RXCINTLVL_LO_gc);       /* Setup USART RX interrupt handling */
+    PORTC.INTCTRL = PORT_INTLVL_LO_gc;      /* Set Port C for low level interrupts */
     PORTC_PIN3CTRL = PORT_ISC_FALLING_gc;   /* Setup PC3 to sense falling edge */
     PORTC.INTMASK = PIN3_bm;                /* Enable pin change interrupt for PC3 */
-    PORTC.INTCTRL = PORT_INTLVL_LO_gc;      /* Set Port C for low level interrupts */
-
-    // Setup USART RX interrupt handling    
-    xusart_config.usart->CTRLA = ((xusart_config.usart->CTRLA & ~USART_RXCINTLVL_gm) | USART_RXCINTLVL_LO_gc);
+    PMIC.CTRL |= PMIC_LOLVLEN_bm;           /* Enable low interrupts */
     
-    // Initialize listening on both RS485 line and nRF.  First in determines bridge direction
+    // Initialize listening on nRF.
     xnrf_config_rx(&xnrf_config);   /* Configure nRF for RX mode */
     xnrf_powerup(&xnrf_config);     /* Power-up the nRF */
     _delay_ms(5);                   /* Let the radio stabilize - Section 6.1.7 - Tpd2stdby */
-    
-    // Enable interrupts and start listening
-    PMIC.CTRL |= PMIC_LOLVLEN_bm;   /* Enable low interrupts */
-    sei();                          /* Enable global interrupt flag */
-    USART_RXMODE;                   /* USART Listen mode */
-    xnrf_enable(&xnrf_config);      /* start listening on nRF */
 }
 
 /* Interrupt handler for nRF hardware interrupt on PC3 */
 ISR(PORTC_INT_vect) {
     xnrf_read_payload(&xnrf_config, rxbuff, xnrf_config.payload_width);     /* Retrieve the payload */
-    xnrf_write_register(&xnrf_config, NRF_STATUS, (1 << RX_DR));            /* Reset the RX_DR status */    
+    xnrf_write_register(&xnrf_config, NRF_STATUS, (1 << RX_DR));            /* Reset the RX_DR status */
+    
+    //TODO: Add check for command byte and check for protocol version?
+    //EDMA.CH0.DESTADDR = (uint16_t)unibuff +
+    //        (rxbuff[RFSC_FRAME] * RFSC_FRAME);                  /* Set DMA CH0 destination address to correct offset for this frame */
+    //EDMA.CH0.CTRLA |= EDMA_CH_ENABLE_bm | EDMA_CH_TRFREQ_bm;    /* Enable and trigger DMA channel 0 */
+
     PORTC.INTFLAGS = PIN3_bm;                                               /* Clear interrupt flag for PC3 */
     DFLAG = true;                                                           /* Set out data ready flag */
  }
 
 /* Interrupt handler for USART RX on Port D - Every 1100 clock cycles @ 115,200? Polling instead? */
 ISR(USARTD0_RXC_vect) {
-    RingBuffer_Insert(&ringbuff, xusart_getchar(xusart_config.usart));   /* get the byte */
+    RingBuffer_Insert(&ringbuff, xusart_getchar(xusart_config.usart));      /* get the byte */
     DFLAG = true;
 }
 
-/* loop for one way nrf->rs485 bridge */
-void nrf_to_rs485_loop() {
-    USART_TXMODE;   /* Enable USART TX */
-
-    while(1) {
-        while(!ringbuff.Count);                         /* Spin our wheels until we have data */
-        xusart_send_buffer(xusart_config.usart, &ringbuff);  /* Spit out the buffer */
-        STATUS_LED_TGL;                                 /* Toggle status LED */
-    }    
+/*************************************************/
+/* Input Parsers                                 */
+/*************************************************/
+void parse_rs485() {
+    
 }
 
+void parse_renard() {
+    
+}
 
+void parse_dmx() {
+    
+}
+
+void parse_rfsc() {
+    
+}
+
+/*************************************************/
+/* Output Generators                             */
+/*************************************************/
+void gen_rs485() {
+    
+}
+
+void gen_renard() {
+    
+}
+
+void gen_dmx() {
+    
+}
+
+void gen_rfsc() {
+    
+}
+
+/*************************************************/
+/* RS485 Input Loops                             */
+/*************************************************/
 /* loop for one way rs485->nrf bridge */
 //TODO: Currently broken...
 void rs485_to_nrf_loop() {
@@ -163,7 +219,7 @@ void rs485_to_nrf_loop() {
 
     xnrf_config_tx(&xnrf_config);   /* Configure the radio for TX mode */
     xnrf_flush_tx(&xnrf_config);
-        
+    
     while(1) {
         // This needs a timeout check or some way to handle packets < 32 bytes.  Timer facilty that resets from RX ISR?
         //^---- calculate timeout based on bitrate of a continuous stream of data + some padding.  if we timeout, terminate
@@ -178,16 +234,8 @@ void rs485_to_nrf_loop() {
     }
 }
 
-/* loop for bidirectional bridge - not binary safe due to flow control. implement XMODEM or something? */
-//TODO: Second thoughts on this and not even started.  How will we handle flow control? XON/OFF?  Should note for terminal / config usage only.
-void bidrectional_loop() {
-    while(1) {
-
-    }
-}
-
-/* Loop for receiving Renard RS485 data and sending as RFPixelControl packets */
-void renard_to_rfp_loop() {
+/* Loop for receiving Renard RS485 data and sending as RFShowControl packets */
+void renard_to_rfsc_loop() {
     uint8_t data;           /* Byte we're processing */
     uint8_t packet[32];     /* Packet buffer */
     uint8_t index = 0;      /* Current index of the packet buffer */
@@ -216,43 +264,43 @@ void renard_to_rfp_loop() {
         /* Process special characters and set states if needed */
         switch(data) {
             case RENARD_PAD:                /* Ignore PAD bytes and wait for next byte */
-                continue;
+            continue;
             case RENARD_SYNC:               /* Set our state to SYNC and process current packet if needed */
-                state = RENSTATE_SYNC;
-                if(index) {
-                    memset(&packet[index], 0x00, RFSC_FRAME - index);   /* Null out rest of packet. PADs will get translated or would use them */
-                    index = RFSC_FRAME;                                 /* Set our index to trigger a TX */
-                }                    
-                continue;
+            state = RENSTATE_SYNC;
+            if(index) {
+                memset(&packet[index], 0x00, RFSC_FRAME - index);   /* Null out rest of packet. PADs will get translated or would use them */
+                index = RFSC_FRAME;                                 /* Set our index to trigger a TX */
+            }
+            continue;
             case RENARD_ESCAPE:             /* Set our state to ESCAPE and wait for next byte */
-                state = RENSTATE_ESCAPE;
-                continue;
+            state = RENSTATE_ESCAPE;
+            continue;
             default:;
         }
 
         /* Decisions, decisions... */
         switch (state) {
             case RENSTATE_ESCAPE:           /* We're in ESCAPE state.  Process characters per Renard protocol and set state to NULL. */
-                switch (data) {
-                    case RENARD_ESC_7D:
-                        data = 0x7D;
-                        break;
-                    case RENARD_ESC_7E:
-                        data = 0x7E;
-                        break;
-                    case RENARD_ESC_7F:
-                        data = 0x7F;
-                        break;
-                }
-                state = RENSTATE_NULL;
+            switch (data) {
+                case RENARD_ESC_7D:
+                data = 0x7D;
                 break;
+                case RENARD_ESC_7E:
+                data = 0x7E;
+                break;
+                case RENARD_ESC_7F:
+                data = 0x7F;
+                break;
+            }
+            state = RENSTATE_NULL;
+            break;
             case RENSTATE_SYNC:             /* We're in SYNC state.  The byte being processed will be the address / command byte. */
-                state = RENSTATE_NULL;      /* Normally, we'd look at this to see if the packet is for us. Ignored for our purposes. */
-                offset = 0;                 /* Reset the offset multiplier */
-                continue;
+            state = RENSTATE_NULL;      /* Normally, we'd look at this to see if the packet is for us. Ignored for our purposes. */
+            offset = 0;                 /* Reset the offset multiplier */
+            continue;
             default:;
-        }            
-            
+        }
+        
         /* What's left is channel data, get to work! */
         packet[index++] = data;
 
@@ -260,8 +308,27 @@ void renard_to_rfp_loop() {
     }
 }
 
-/* Loop for receiving RFPixelControl packets and sending as Renard RS485 data */
-void rfp_to_renard_loop() {
+/* Loop for receiving RS485 DMX data and sending as RFShowControl packets */
+void dmx_to_rfsc_loop() {
+
+}
+
+/*************************************************/
+/* nRF24L01 Input Loops                          */
+/*************************************************/
+/* loop for one way nrf->rs485 bridge */
+void nrf_to_rs485_loop() {
+    USART_TXMODE;   /* Enable USART TX */
+
+    while(1) {
+        while(!ringbuff.Count);                         /* Spin our wheels until we have data */
+        xusart_send_buffer(xusart_config.usart, &ringbuff);  /* Spit out the buffer */
+        STATUS_LED_TGL;                                 /* Toggle status LED */
+    }    
+}
+
+/* Loop for receiving RFShowControl packets and sending as Renard RS485 data */
+void rfsc_to_renard_loop() {
     USART_TXMODE;                   /* Enable USART TX */
     //xnrf_config_rx(&xnrf_config);   /* Switch to nRF RX mode */
 
@@ -270,33 +337,52 @@ void rfp_to_renard_loop() {
         DFLAG = false;  /* and reset out flag */
 
         STATUS_LED_ON;
-        if(rxbuff[30] == 0) {                               /* Check the offset byte to reset the Renard stream if needed */
-            xusart_putchar(xusart_config.usart, RENARD_SYNC);    /* Send the Renard SYNC byte */
-            xusart_putchar(xusart_config.usart, RENARD_ADDR);    /* and the Command / Address byte */
+        if(rxbuff[30] == 0) {                                   /* Check the offset byte to reset the Renard stream if needed */
+            xusart_putchar(xusart_config.usart, RENARD_SYNC);   /* Send the Renard SYNC byte */
+            xusart_putchar(xusart_config.usart, RENARD_ADDR);   /* and the Command / Address byte */
         }
         
         /* Process and send channel data. Escape Renard special characters. */
         for (uint8_t i = 0; i < 30; i++) {
             switch (rxbuff[i]) {
                 case RENARD_PAD:
-                    xusart_putchar(xusart_config.usart, RENARD_ESCAPE);
-                    xusart_putchar(xusart_config.usart, RENARD_ESC_7D);
-                    break;
+                xusart_putchar(xusart_config.usart, RENARD_ESCAPE);
+                xusart_putchar(xusart_config.usart, RENARD_ESC_7D);
+                break;
                 case RENARD_SYNC:
-                    xusart_putchar(xusart_config.usart, RENARD_ESCAPE);
-                    xusart_putchar(xusart_config.usart, RENARD_ESC_7E);
-                    break;
+                xusart_putchar(xusart_config.usart, RENARD_ESCAPE);
+                xusart_putchar(xusart_config.usart, RENARD_ESC_7E);
+                break;
                 case RENARD_ESCAPE:
-                    xusart_putchar(xusart_config.usart, RENARD_ESCAPE);
-                    xusart_putchar(xusart_config.usart, RENARD_ESC_7F);
-                    break;
+                xusart_putchar(xusart_config.usart, RENARD_ESCAPE);
+                xusart_putchar(xusart_config.usart, RENARD_ESC_7F);
+                break;
                 default:
-                    xusart_putchar(xusart_config.usart, rxbuff[i]);
-            }                    
+                xusart_putchar(xusart_config.usart, rxbuff[i]);
+            }
         }
-        STATUS_LED_OFF;            
-    }        
-}    
+        STATUS_LED_OFF;
+    }
+}
+
+/* Loop for receiving RFShowControl packets and sending as DMX data */
+void rfsc_to_dmx_loop() {
+    
+}
+
+
+/*************************************************/
+/* Bi-Directional Loops                          */
+/*************************************************/
+/* loop for bidirectional bridge - not binary safe due to flow control. implement XMODEM or something? */
+//TODO: Second thoughts on this and not even started.  How will we handle flow control? XON/OFF?  Should note for terminal / config usage only.
+void passthru_loop() {
+
+}
+
+void configuration_loop() {
+    
+}
 
 void test_tx_loop() {
     uint8_t	alphatest[32] = {0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48,
@@ -315,15 +401,19 @@ void test_tx_loop() {
     }
 }
 
-
 int main(void) {
-    init();
-    
-    //TODO: Add logic to determine bridge direction.  For now, we're going one direction: nRF->RS485.
+    init();     /* Initialize the board */
+     
+     // Enable global interrupts and start listening
+     sei();                          /* Enable global interrupt flag */
+     USART_RXMODE;                   /* USART Listen mode */
+     xnrf_enable(&xnrf_config);      /* start listening on nRF */
+
+    //TODO: Add logic to determine bridge direction.
     //nrf_to_rs485_loop();
     //rs485_to_nrf_loop();
     //bidirectional_loop();
-    renard_to_rfp_loop();
+    renard_to_rfsc_loop();
     //rfp_to_renard_loop();
     //test_tx_loop();
 }
