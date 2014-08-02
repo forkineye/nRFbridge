@@ -115,7 +115,7 @@ static inline uint8_t xusart_getchar(USART_t *usart) {
  *  \param data     Pointer to the data packet to send.
  *  \param len      Size of the buffer in bytes.
  */
-static inline void xusart_send_packet(USART_t *usart, uint8_t *data, uint8_t len) {
+static inline void xusart_send_packet(USART_t *usart, volatile uint8_t *data, uint8_t len) {
     while (len--)
         xusart_putchar(usart, *data++);
 }

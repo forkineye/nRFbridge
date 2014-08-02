@@ -60,12 +60,12 @@
 /* DMX */
 #define DMX_BAUDRATE    250000
 
-/* Bridge Modes */
+/* Bridge IO Modes */
 typedef enum {
-    MODE_CONFIG,
     MODE_RENARD,
     MODE_DMX,
-    MODE_RS485
+    MODE_RS485,
+    MODE_CONFIG
 } bridge_mode_t;
 
 /* RF Protocols */
@@ -74,8 +74,11 @@ typedef enum {
 } rf_proto_t;
 
 /* RFShowControl v0.3 Protocol */
-#define RFSC_FRAME  30  /* Offset for FRAME byte in RFSC Protocol */
-#define RFSC_CMD    31  /* Offset for COMMAND byte - proposed */
+#define RFSC_FRAME_SIZE 30  /* Size of a frame */
+#define RFSC_FRAME      30  /* Offset for FRAME byte in RFSC Protocol */
+#define RFSC_CMD        31  /* Offset for COMMAND byte - proposed */
 
+/* Default RF Frame Size */
+#define FRAME_SIZE  RFSC_FRAME_SIZE
 
 #endif /* CONFIG_H_ */
